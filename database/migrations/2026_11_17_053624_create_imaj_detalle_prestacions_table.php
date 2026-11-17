@@ -1,0 +1,25 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        DB::unprepared('CREATE TABLE IMAJ_DETALLE_PRESTACIONES (ID NUMBER, PRESUPUESTO_ID NUMBER, PRESTACION_ID NUMBER, PRECIO NUMBER, CONSTRAINT PK_IMAJ_DETALLE_PRESTACIONES PRIMARY KEY (ID), CONSTRAINT FK_DETALLE_PRESTACIONES_PRESUPUESTOS FOREIGN KEY (PRESUPUESTO_ID) REFERENCES IMAJ_PRESUPUESTOS (ID), CONSTRAINT FK_DETALLE_PRESTACIONES_PRESTACIONES FOREIGN KEY (PRESTACION_ID) REFERENCES IMAJ_PRESTACIONES (ID))');
+        DB::unprepared('CREATE SEQUENCE SEQ_IMAJ_DETALLE_PRESTACIONES START WITH 1 INCREMENT BY 1 NOCACHE');
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        DB::statement('DROP SEQUENCE SEQ_IMAJ_DETALLE_PRESTACIONES');
+        DB::statement('DROP TABLE IMAJ_DETALLE_PRESTACIONES CASCADE CONSTRAINTS');
+    }
+};

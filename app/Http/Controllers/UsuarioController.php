@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Usuario;
+use App\Services\OracleCrudService;
+
+class UsuarioController extends CrudController
+{
+    protected string $modelClass = Usuario::class;
+
+    protected string $title = 'Usuarios';
+
+    protected string $routeName = 'usuarios';
+
+    protected array $fields = [
+        ['name' => 'NOMBRE_USUARIO', 'label' => 'Nombre de usuario', 'type' => 'text'],
+        ['name' => 'PASSWORD_HASH', 'label' => 'Contraseña', 'type' => 'password', 'show_in_index' => false, 'show_in_view' => false, 'placeholder' => 'Deja vacío para conservarla'],
+        ['name' => 'ROL_ID', 'label' => 'Rol', 'type' => 'select', 'options' => [self::class, 'roleOptions']],
+    ];
+
+    protected array $rules = [
+        'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
+        'PASSWORD_HASH' => ['required', 'string', 'min:12', 'max:128'],
+        'ROL_ID' => ['required', 'integer'],
+    ];
+
+    protected array $updateRules = [
+        'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
+        'PASSWORD_HASH' => ['nullable', 'string', 'min:12', 'max:128'],
+        'ROL_ID' => ['required', 'integer'],
+    ];
+
+    protected array $hashFields = ['PASSWORD_HASH'];
+
+    protected array $preserveOnEmpty = ['PASSWORD_HASH'];
+
+    public static function roleOptions(): array
+    {
+        return app(OracleCrudService::class)->options('IMAJ_ROLES', 'NOMBRE_ROL');
+    }
+}
