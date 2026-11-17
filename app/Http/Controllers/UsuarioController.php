@@ -19,18 +19,6 @@ class UsuarioController extends CrudController
         ['name' => 'ROL_ID', 'label' => 'Rol', 'type' => 'select', 'options' => [self::class, 'roleOptions']],
     ];
 
-    protected array $rules = [
-        'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
-        'PASSWORD_HASH' => ['required', 'string', 'min:12', 'max:128'],
-        'ROL_ID' => ['required', 'integer'],
-    ];
-
-    protected array $updateRules = [
-        'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
-        'PASSWORD_HASH' => ['nullable', 'string', 'min:12', 'max:128'],
-        'ROL_ID' => ['required', 'integer'],
-    ];
-
     protected array $hashFields = ['PASSWORD_HASH'];
 
     protected array $preserveOnEmpty = ['PASSWORD_HASH'];

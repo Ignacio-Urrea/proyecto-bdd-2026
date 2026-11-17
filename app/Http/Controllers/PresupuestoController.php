@@ -18,11 +18,6 @@ class PresupuestoController extends CrudController
         ['name' => 'ORDEN_ID', 'label' => 'Orden', 'type' => 'select', 'options' => [self::class, 'orderOptions']],
     ];
 
-    protected array $rules = [
-        'ESTADO' => ['required', 'integer'],
-        'ORDEN_ID' => ['required', 'integer'],
-    ];
-
     public static function orderOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_ORDENES', 'ID');

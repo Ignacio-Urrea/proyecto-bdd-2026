@@ -15,6 +15,4 @@ class RegionController extends CrudController
     protected array $fields = [
         ['name' => 'NOMBRE_REGION', 'label' => 'Nombre de la región', 'type' => 'text'],
     ];
-
-    protected array $rules = ['NOMBRE_REGION' => ['required', 'string', 'max:22']];
 }

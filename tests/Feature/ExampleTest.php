@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Requests\Crud\CrudRequestRules;
+use App\Http\Requests\Crud\StoreCrudRequest;
 // use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
@@ -83,5 +85,15 @@ class ExampleTest extends TestCase
 
         $this->assertStringContainsString('Crear: Ciudades', $html);
         $this->assertStringContainsString('Guardar', $html);
+    }
+
+    public function test_crud_form_request_resolves_rules_from_its_named_resource_route(): void
+    {
+        $route = app('router')->getRoutes()->getByName('ciudades.store');
+        $request = StoreCrudRequest::create('/ciudades', 'POST');
+        $request->setContainer($this->app);
+        $request->setRouteResolver(fn () => $route);
+
+        $this->assertSame(CrudRequestRules::for('ciudades'), $request->rules());
     }
 }

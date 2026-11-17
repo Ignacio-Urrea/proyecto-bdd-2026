@@ -20,13 +20,6 @@ class ClinicaController extends CrudController
         ['name' => 'CORREO_CLINICA', 'label' => 'Correo', 'type' => 'email'],
     ];
 
-    protected array $rules = [
-        'ADMINISTRADOR_ID' => ['required', 'integer'],
-        'DIRECCION_ID' => ['required', 'integer'],
-        'NOMBRE_CLINICA' => ['required', 'string', 'max:32'],
-        'CORREO_CLINICA' => ['required', 'email', 'max:32'],
-    ];
-
     public static function userOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_USUARIOS', 'NOMBRE_USUARIO');

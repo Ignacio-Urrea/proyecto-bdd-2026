@@ -18,11 +18,6 @@ class DireccionController extends CrudController
         ['name' => 'CALLE', 'label' => 'Calle', 'type' => 'text'],
     ];
 
-    protected array $rules = [
-        'CIUDAD_ID' => ['required', 'integer'],
-        'CALLE' => ['required', 'string', 'max:22'],
-    ];
-
     public static function cityOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_CIUDADES', 'NOMBRE_CIUDAD');

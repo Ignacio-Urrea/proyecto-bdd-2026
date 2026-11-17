@@ -15,6 +15,4 @@ class RolController extends CrudController
     protected array $fields = [
         ['name' => 'NOMBRE_ROL', 'label' => 'Nombre del rol', 'type' => 'text'],
     ];
-
-    protected array $rules = ['NOMBRE_ROL' => ['required', 'string', 'max:16']];
 }

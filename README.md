@@ -37,6 +37,8 @@ La aplicación incluye modelos sin prefijo (`Rol`, `Paciente`, etc.) y CRUD web 
 
 Las vistas de cada modelo están en `resources/views/{modelo}/` (por ejemplo, `resources/views/ciudad/`) y contienen `index`, `create`, `update`, `delete`, `form` y `view`. Los formularios y listados reutilizan plantillas comunes para mantener el mismo comportamiento y facilitar su personalización por modelo.
 
+La capa HTTP usa rutas protegidas por middleware, Form Requests para validar CRUD, autenticación y gestores, y servicios para las operaciones Oracle y flujos de negocio. Las escrituras exitosas emiten `OracleOperationCompleted` después de la transacción; su listener registra solo metadatos de operación, recurso y actor, sin datos clínicos. Por ahora no se agregan Jobs: no hay tareas que deban ejecutarse en segundo plano y los flujos deben responder inmediatamente.
+
 Antes de ejecutar `php artisan migrate`, confirma que las tablas `IMAJ_*` no existan ya en el esquema. Las migraciones crean las tablas y secuencias desde cero; no ejecutes `migrate:fresh` en una base con datos.
 
 Después de migrar, crea el primer administrador de forma interactiva con `php artisan app:create-admin`. La contraseña se solicita de forma oculta y se almacena como hash en `PASSWORD_HASH`; los valores existentes de `CONTRASEÑA` se copian al nuevo campo hasheados, sin borrar ni modificar la columna original.

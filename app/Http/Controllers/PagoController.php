@@ -19,12 +19,6 @@ class PagoController extends CrudController
         ['name' => 'METODO_PAGO', 'label' => 'Método de pago', 'type' => 'text'],
     ];
 
-    protected array $rules = [
-        'PRESUPUESTO_ID' => ['required', 'integer'],
-        'MONTO' => ['required', 'numeric', 'min:0'],
-        'METODO_PAGO' => ['required', 'string', 'max:32'],
-    ];
-
     public static function budgetOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_PRESUPUESTOS', 'ID');

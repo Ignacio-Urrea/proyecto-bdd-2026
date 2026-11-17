@@ -2,14 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Managers\StoreBudgetRequest;
+use App\Http\Requests\Managers\StoreExamRequest;
+use App\Http\Requests\Managers\StoreOrderRequest;
+use App\Http\Requests\Managers\StorePaymentRequest;
+use App\Http\Requests\Managers\StoreReportRequest;
+use App\Services\ManagerWorkflowService;
 use App\Services\OracleCrudService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
-use JsonException;
 
 class ManagerController extends Controller
 {
+    public function __construct(private readonly ManagerWorkflowService $manager) {}
+
     public function createOrder(): View
     {
         return $this->form('Agendar una orden', 'gestores.ordenes.store', [
@@ -20,21 +26,9 @@ class ManagerController extends Controller
         ]);
     }
 
-    public function storeOrder(Request $request): RedirectResponse
+    public function storeOrder(StoreOrderRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'PACIENTE_ID' => ['required', 'integer'],
-            'SUCURSAL_ID' => ['required', 'integer'],
-            'FECHA_CITA' => ['required', 'date_format:Y-m-d'],
-            'HORA_CITA' => ['required', 'integer'],
-        ]);
-
-        app(OracleCrudService::class)->runManager('CREATE_ORDER', [
-            'p_patient_id' => $data['PACIENTE_ID'],
-            'p_branch_id' => $data['SUCURSAL_ID'],
-            'p_date' => $data['FECHA_CITA'],
-            'p_hour' => $data['HORA_CITA'],
-        ]);
+        $this->manager->createOrder($request->validated());
 
         return $this->complete('Orden creada.');
     }
@@ -47,21 +41,9 @@ class ManagerController extends Controller
         ]);
     }
 
-    /**
-     * @throws JsonException
-     */
-    public function storeBudget(Request $request): RedirectResponse
+    public function storeBudget(StoreBudgetRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'ORDEN_ID' => ['required', 'integer'],
-            'PRESTACION_IDS' => ['required', 'array', 'min:1'],
-            'PRESTACION_IDS.*' => ['required', 'integer'],
-        ]);
-
-        app(OracleCrudService::class)->runManager('BUILD_BUDGET', [
-            'p_order_id' => $data['ORDEN_ID'],
-            'p_services' => json_encode(array_map('intval', $data['PRESTACION_IDS']), JSON_THROW_ON_ERROR),
-        ]);
+        $this->manager->buildBudget($request->validated());
 
         return $this->complete('Presupuesto generado con los precios vigentes.');
     }
@@ -75,19 +57,9 @@ class ManagerController extends Controller
         ]);
     }
 
-    public function storePayment(Request $request): RedirectResponse
+    public function storePayment(StorePaymentRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'PRESUPUESTO_ID' => ['required', 'integer'],
-            'MONTO' => ['required', 'numeric', 'gt:0'],
-            'METODO_PAGO' => ['required', 'string', 'max:32'],
-        ]);
-
-        app(OracleCrudService::class)->runManager('REGISTER_PAYMENT', [
-            'p_budget_id' => $data['PRESUPUESTO_ID'],
-            'p_amount' => $data['MONTO'],
-            'p_method' => $data['METODO_PAGO'],
-        ]);
+        $this->manager->registerPayment($request->validated());
 
         return $this->complete('Pago registrado y estado del presupuesto actualizado.');
     }
@@ -101,19 +73,9 @@ class ManagerController extends Controller
         ]);
     }
 
-    public function storeExam(Request $request): RedirectResponse
+    public function storeExam(StoreExamRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'EXAMEN_ID' => ['required', 'integer'],
-            'ESTADO' => ['required', 'integer'],
-            'EJECUTADA' => ['required', 'integer', 'in:0,1'],
-        ]);
-
-        app(OracleCrudService::class)->runManager('COMPLETE_EXAM', [
-            'p_exam_id' => $data['EXAMEN_ID'],
-            'p_status' => $data['ESTADO'],
-            'p_completed' => $data['EJECUTADA'],
-        ]);
+        $this->manager->completeExam($request->validated());
 
         return $this->complete('Estado del examen y de la orden actualizado.');
     }
@@ -129,23 +91,9 @@ class ManagerController extends Controller
         ]);
     }
 
-    public function storeReport(Request $request): RedirectResponse
+    public function storeReport(StoreReportRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'EXAMEN_ID' => ['required', 'integer'],
-            'TITULO' => ['required', 'string', 'max:32'],
-            'CUERPO' => ['required', 'string', 'max:1028'],
-            'ADENDUM' => ['required', 'integer', 'in:0,1'],
-            'RUTA' => ['nullable', 'string', 'max:64'],
-        ]);
-
-        app(OracleCrudService::class)->runManager('PUBLISH_REPORT', [
-            'p_exam_id' => $data['EXAMEN_ID'],
-            'p_title' => $data['TITULO'],
-            'p_body' => $data['CUERPO'],
-            'p_addendum' => $data['ADENDUM'],
-            'p_path' => $data['RUTA'] ?? null,
-        ]);
+        $this->manager->publishReport($request->validated());
 
         return $this->complete('Informe publicado.');
     }

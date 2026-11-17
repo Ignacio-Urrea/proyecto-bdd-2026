@@ -19,12 +19,6 @@ class DetallePrestacionController extends CrudController
         ['name' => 'PRECIO', 'label' => 'Precio', 'type' => 'number', 'step' => '0.01'],
     ];
 
-    protected array $rules = [
-        'PRESUPUESTO_ID' => ['required', 'integer'],
-        'PRESTACION_ID' => ['required', 'integer'],
-        'PRECIO' => ['required', 'numeric', 'min:0'],
-    ];
-
     public static function budgetOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_PRESUPUESTOS', 'ID');

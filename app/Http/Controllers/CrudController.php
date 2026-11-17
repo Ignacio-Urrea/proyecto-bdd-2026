@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Crud\CrudRequestRules;
+use App\Http\Requests\Crud\StoreCrudRequest;
+use App\Http\Requests\Crud\UpdateCrudRequest;
 use App\Services\OracleCrudService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -20,13 +22,14 @@ abstract class CrudController extends Controller
 
     protected array $fields = [];
 
-    protected array $rules = [];
-
-    protected array $updateRules = [];
-
     protected array $hashFields = [];
 
     protected array $preserveOnEmpty = [];
+
+    public function validationRules(bool $updating = false): array
+    {
+        return CrudRequestRules::for($this->routeName, $updating);
+    }
 
     public function index(): View
     {
@@ -46,10 +49,10 @@ abstract class CrudController extends Controller
         return $this->formView(null, 'Crear', 'create');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreCrudRequest $request): RedirectResponse
     {
         $modelClass = $this->modelClass;
-        $data = $this->hashSensitiveFields($request->validate($this->rules));
+        $data = $this->hashSensitiveFields($request->validated());
         app(OracleCrudService::class)->insert((new $modelClass)->getTable(), $data);
 
         return redirect()->route($this->routeName.'.index')->with('status', 'Registro creado correctamente.');
@@ -95,13 +98,12 @@ abstract class CrudController extends Controller
         ]);
     }
 
-    public function update(Request $request, int $id): RedirectResponse
+    public function update(UpdateCrudRequest $request, int $id): RedirectResponse
     {
         $modelClass = $this->modelClass;
         $service = app(OracleCrudService::class);
         abort_if($service->find((new $modelClass)->getTable(), $id) === null, 404);
-        $rules = $this->updateRules === [] ? $this->rules : $this->updateRules;
-        $data = $request->validate($rules);
+        $data = $request->validated();
 
         foreach ($this->preserveOnEmpty as $field) {
             if (empty($data[$field])) {
@@ -124,7 +126,7 @@ abstract class CrudController extends Controller
 
     private function formView(?object $record, string $action, string $template): View
     {
-        $rules = $record !== null && $this->updateRules !== [] ? $this->updateRules : $this->rules;
+        $rules = $this->validationRules(updating: $record !== null);
         $fields = array_map(function (array $field) use ($rules): array {
             $fieldRules = $rules[$field['name']] ?? [];
             $field['required'] = in_array('required', $fieldRules, true);

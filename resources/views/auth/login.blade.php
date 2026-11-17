@@ -1,20 +1,34 @@
 @extends('layouts.app', ['title' => 'Iniciar sesión'])
 
 @section('content')
-    <div class="panel" style="max-width: 520px; margin: 3rem auto;">
-        <h1>Iniciar sesión</h1>
+    <div class="card card-outline card-primary mb-0">
+        <div class="card-header text-center">
+            <span class="h3"><b>Gestión Radiológica</b></span>
+            <div class="text-body-secondary">IMAJ</div>
+        </div>
         <form method="POST" action="{{ route('login.store') }}">
             @csrf
-            <label for="NOMBRE_USUARIO">Nombre de usuario</label>
-            <input id="NOMBRE_USUARIO" name="NOMBRE_USUARIO" type="text" maxlength="16" value="{{ old('NOMBRE_USUARIO') }}" autocomplete="username" required autofocus>
-            @error('NOMBRE_USUARIO')<div class="errors">{{ $message }}</div>@enderror
-
-            <label for="password">Contraseña</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
-            @error('NOMBRE_USUARIO')<div class="errors">{{ $message }}</div>@enderror
-
-            <div class="form-actions">
-                <button type="submit">Ingresar</button>
+            <div class="card-body login-card-body">
+                <p class="login-box-msg">Inicia sesión para comenzar</p>
+                <div class="input-group mb-3">
+                    <div class="form-floating">
+                        <input class="form-control @error('NOMBRE_USUARIO') is-invalid @enderror" id="NOMBRE_USUARIO" name="NOMBRE_USUARIO" type="text" maxlength="16" value="{{ old('NOMBRE_USUARIO') }}" placeholder="Nombre de usuario" autocomplete="username" required autofocus>
+                        <label for="NOMBRE_USUARIO">Nombre de usuario</label>
+                    </div>
+                    <div class="input-group-text"><span class="bi bi-person"></span></div>
+                    @error('NOMBRE_USUARIO')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                </div>
+                <div class="input-group mb-3">
+                    <div class="form-floating">
+                        <input class="form-control @error('password') is-invalid @enderror" id="password" name="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+                        <label for="password">Contraseña</label>
+                    </div>
+                    <div class="input-group-text"><span class="bi bi-lock"></span></div>
+                    @error('password')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                </div>
+                <div class="d-grid">
+                    <button class="btn btn-primary" type="submit">Ingresar</button>
+                </div>
             </div>
         </form>
     </div>

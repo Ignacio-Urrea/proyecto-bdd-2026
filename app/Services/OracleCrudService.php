@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Events\OracleOperationCompleted;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -90,11 +92,16 @@ class OracleCrudService
      */
     public function insert(string $table, array $data): void
     {
+        $table = $this->assertTable($table);
+        $payload = $this->payload($table, $data);
+
         $this->mutate(
             fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.INSERT_ROW', [
-                'p_table' => $this->assertTable($table),
-                'p_payload' => $this->payload($table, $data),
+                'p_table' => $table,
+                'p_payload' => $payload,
             ]),
+            'insert',
+            $table,
         );
     }
 
@@ -103,22 +110,31 @@ class OracleCrudService
      */
     public function update(string $table, int $id, array $data): void
     {
+        $table = $this->assertTable($table);
+        $payload = $this->payload($table, $data);
+
         $this->mutate(
             fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.UPDATE_ROW', [
-                'p_table' => $this->assertTable($table),
+                'p_table' => $table,
                 'p_id' => $id,
-                'p_payload' => $this->payload($table, $data),
+                'p_payload' => $payload,
             ]),
+            'update',
+            $table,
         );
     }
 
     public function delete(string $table, int $id): void
     {
+        $table = $this->assertTable($table);
+
         $this->mutate(
             fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.DELETE_ROW', [
-                'p_table' => $this->assertTable($table),
+                'p_table' => $table,
                 'p_id' => $id,
             ]),
+            'delete',
+            $table,
         );
     }
 
@@ -137,6 +153,8 @@ class OracleCrudService
 
         $this->mutate(
             fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.'.$procedure, $bindings),
+            'manager',
+            $procedure,
         );
     }
 
@@ -196,7 +214,7 @@ class OracleCrudService
         return $table;
     }
 
-    private function mutate(callable $operation): void
+    private function mutate(callable $operation, string $action, string $resource): void
     {
         try {
             DB::transaction($operation);
@@ -221,5 +239,7 @@ class OracleCrudService
 
             throw $exception;
         }
+
+        OracleOperationCompleted::dispatch($action, $resource, Auth::id());
     }
 }

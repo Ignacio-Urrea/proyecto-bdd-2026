@@ -22,15 +22,6 @@ class OrdenController extends CrudController
         ['name' => 'ESTADO', 'label' => 'Estado', 'type' => 'number'],
     ];
 
-    protected array $rules = [
-        'PACIENTE_ID' => ['required', 'integer'],
-        'SUCURSAL_ID' => ['required', 'integer'],
-        'EJECUTADA' => ['required', 'integer', 'in:0,1'],
-        'FECHA_CITA' => ['required', 'date'],
-        'HORA_CITA' => ['required', 'integer'],
-        'ESTADO' => ['required', 'integer'],
-    ];
-
     public static function patientOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_PACIENTES', 'RUT');

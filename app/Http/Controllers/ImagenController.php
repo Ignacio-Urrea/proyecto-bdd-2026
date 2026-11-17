@@ -22,15 +22,6 @@ class ImagenController extends CrudController
         ['name' => 'INFORME_ID', 'label' => 'Informe', 'type' => 'select', 'options' => [self::class, 'reportOptions']],
     ];
 
-    protected array $rules = [
-        'TAMANIO' => ['required', 'integer', 'min:0'],
-        'NOMBRE' => ['required', 'string', 'max:64'],
-        'TIPO' => ['required', 'string', 'max:16'],
-        'RUTA' => ['nullable', 'string', 'max:64'],
-        'EXAMEN_ID' => ['nullable', 'integer'],
-        'INFORME_ID' => ['nullable', 'integer'],
-    ];
-
     public static function examOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_EXAMENES', 'ID');

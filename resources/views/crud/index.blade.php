@@ -1,12 +1,17 @@
 @extends('layouts.app', ['title' => $title])
 
 @section('content')
-    <div class="toolbar">
-        <h1>{{ $title }}</h1>
-        <a class="button" href="{{ route($routeName.'.create') }}">Nuevo registro</a>
-    </div>
-    <div class="table-wrap">
-        <table>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ $title }}</h3>
+            <div class="card-tools">
+                <a class="btn btn-primary btn-sm" href="{{ route($routeName.'.create') }}">
+                    <i class="bi bi-plus-lg me-1"></i>Nuevo registro
+                </a>
+            </div>
+        </div>
+        <div class="card-body table-responsive p-0">
+            <table class="table table-hover align-middle mb-0">
             <thead>
             <tr>
                 <th>ID</th>
@@ -30,17 +35,22 @@
                             @endif
                         </td>
                     @endforeach
-                    <td class="actions">
-                        <a href="{{ route($routeName.'.show', $record->ID) }}">Ver</a>
-                        <a href="{{ route($routeName.'.edit', $record->ID) }}">Editar</a>
-                        <a class="danger" href="{{ route($routeName.'.delete', $record->ID) }}">Eliminar</a>
+                    <td class="text-nowrap">
+                        <a class="btn btn-outline-info btn-sm" href="{{ route($routeName.'.show', $record->ID) }}">Ver</a>
+                        <a class="btn btn-outline-primary btn-sm" href="{{ route($routeName.'.edit', $record->ID) }}">Editar</a>
+                        <a class="btn btn-outline-danger btn-sm" href="{{ route($routeName.'.delete', $record->ID) }}">Eliminar</a>
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="{{ count($fields) + 2 }}">No hay registros.</td></tr>
+                <tr><td class="text-center text-body-secondary py-4" colspan="{{ count($fields) + 2 }}">No hay registros.</td></tr>
             @endforelse
             </tbody>
-        </table>
-        {{ $records->links() }}
+            </table>
+        </div>
+        @if($records->hasPages())
+            <div class="card-footer clearfix">
+                {{ $records->links() }}
+            </div>
+        @endif
     </div>
 @endsection

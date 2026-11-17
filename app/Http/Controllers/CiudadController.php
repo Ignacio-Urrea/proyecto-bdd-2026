@@ -18,11 +18,6 @@ class CiudadController extends CrudController
         ['name' => 'NOMBRE_CIUDAD', 'label' => 'Nombre de la ciudad', 'type' => 'text'],
     ];
 
-    protected array $rules = [
-        'REGION_ID' => ['required', 'integer'],
-        'NOMBRE_CIUDAD' => ['required', 'string', 'max:32'],
-    ];
-
     public static function regionOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_REGIONES', 'NOMBRE_REGION');

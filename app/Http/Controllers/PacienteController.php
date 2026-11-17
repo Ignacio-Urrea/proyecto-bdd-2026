@@ -23,16 +23,6 @@ class PacienteController extends CrudController
         ['name' => 'TELEFONO', 'label' => 'Teléfono', 'type' => 'number'],
     ];
 
-    protected array $rules = [
-        'CLINICA_ID' => ['required', 'integer'],
-        'FECHA_NACIMIENTO' => ['required', 'date'],
-        'NOMBRE' => ['required', 'string', 'max:32'],
-        'APELLIDO_P' => ['required', 'string', 'max:32'],
-        'APELLIDO_M' => ['required', 'string', 'max:32'],
-        'RUT' => ['required', 'string', 'max:32'],
-        'TELEFONO' => ['nullable', 'integer'],
-    ];
-
     public static function clinicOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_CLINICAS', 'NOMBRE_CLINICA');

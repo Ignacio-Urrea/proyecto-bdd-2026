@@ -20,13 +20,6 @@ class ExamenController extends CrudController
         ['name' => 'ESTADO', 'label' => 'Estado', 'type' => 'number'],
     ];
 
-    protected array $rules = [
-        'ORDEN_ID' => ['required', 'integer'],
-        'URGENCIA' => ['required', 'integer'],
-        'FECHA_SOLICITUD' => ['required', 'date'],
-        'ESTADO' => ['required', 'integer'],
-    ];
-
     public static function orderOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_ORDENES', 'ID');

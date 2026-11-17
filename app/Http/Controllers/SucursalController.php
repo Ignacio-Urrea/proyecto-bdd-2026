@@ -20,13 +20,6 @@ class SucursalController extends CrudController
         ['name' => 'DIRECCION_ID', 'label' => 'Dirección', 'type' => 'select', 'options' => [self::class, 'addressOptions']],
     ];
 
-    protected array $rules = [
-        'ADMINISTRADOR_ID' => ['required', 'integer'],
-        'CLINICA_ID' => ['required', 'integer'],
-        'CORREO_SUCURSAL' => ['required', 'email', 'max:32'],
-        'DIRECCION_ID' => ['required', 'integer'],
-    ];
-
     public static function userOptions(): array
     {
         return app(OracleCrudService::class)->options('IMAJ_USUARIOS', 'NOMBRE_USUARIO');

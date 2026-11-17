@@ -17,10 +17,4 @@ class PrestacionController extends CrudController
         ['name' => 'PRECIO_BASE', 'label' => 'Precio base', 'type' => 'number', 'step' => '0.01'],
         ['name' => 'HABILITADA', 'label' => 'Habilitada', 'type' => 'select', 'options' => [1 => 'Sí', 0 => 'No']],
     ];
-
-    protected array $rules = [
-        'NOMBRE' => ['required', 'string', 'max:32'],
-        'PRECIO_BASE' => ['required', 'numeric', 'min:0'],
-        'HABILITADA' => ['required', 'integer', 'in:0,1'],
-    ];
 }
