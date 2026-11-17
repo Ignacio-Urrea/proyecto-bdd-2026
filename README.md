@@ -21,6 +21,16 @@ Laravel is a web application framework with expressive, elegant syntax. We belie
 
 Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
+## Configuracion de Oracle XE 21c
+
+El proyecto usa Laravel-OCI8 para conectarse a Oracle. Cada entorno necesita PHP 8.3 o superior, la extension OCI8 y las bibliotecas cliente de Oracle compatibles con la arquitectura de PHP.
+
+1. Instala OCI8 para tu version y arquitectura de PHP, y asegúrate de que Oracle Instant Client o el cliente incluido con Oracle XE esté disponible en el `PATH`.
+2. Copia los valores de Oracle de `.env.example` a tu `.env` local si aún no existen. Usa `XEPDB1` como servicio y las credenciales de un usuario de aplicación, no las de `SYSTEM`.
+3. Ejecuta `php artisan migrate` para crear las tablas de Laravel en el esquema de ese usuario.
+
+No agregues `.env` ni contraseñas al repositorio. En Windows, reinicia la terminal después de cambiar el `PATH`.
+
 ## Learning Laravel
 
 Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
