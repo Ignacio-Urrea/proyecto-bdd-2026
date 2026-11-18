@@ -26,6 +26,37 @@ class Usuario extends Authenticatable
         return ['PASSWORD_HASH' => 'hashed'];
     }
 
+    public function getAttribute($key)
+    {
+        $value = parent::getAttribute($key);
+
+        if ($value !== null) {
+            return $value;
+        }
+
+        $upper = strtoupper($key);
+        $lower = strtolower($key);
+
+        if ($key !== $upper && parent::getAttribute($upper) !== null) {
+            return parent::getAttribute($upper);
+        }
+
+        if ($key !== $lower && parent::getAttribute($lower) !== null) {
+            return parent::getAttribute($lower);
+        }
+
+        return null;
+    }
+
+    public function getAuthPassword(): string
+    {
+        return (string) (
+            $this->getAttribute('PASSWORD_HASH')
+            ?? $this->getAttribute('password_hash')
+            ?? ''
+        );
+    }
+
     public function getAuthPasswordName(): string
     {
         return 'PASSWORD_HASH';
