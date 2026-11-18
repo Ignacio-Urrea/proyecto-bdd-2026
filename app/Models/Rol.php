@@ -19,6 +19,28 @@ class Rol extends Model
 
     protected $fillable = ['NOMBRE_ROL'];
 
+    public function getAttribute($key)
+    {
+        $value = parent::getAttribute($key);
+
+        if ($value !== null) {
+            return $value;
+        }
+
+        $upper = strtoupper($key);
+        $lower = strtolower($key);
+
+        if ($key !== $upper && parent::getAttribute($upper) !== null) {
+            return parent::getAttribute($upper);
+        }
+
+        if ($key !== $lower && parent::getAttribute($lower) !== null) {
+            return parent::getAttribute($lower);
+        }
+
+        return null;
+    }
+
     protected function oracleSequence(): string
     {
         return 'SEQ_IMAJ_ROLES';

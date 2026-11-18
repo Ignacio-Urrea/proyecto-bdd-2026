@@ -14,7 +14,15 @@ class RequireRole
         $user = $request->user();
         $role = $user?->rol?->NOMBRE_ROL;
 
-        if ($role === null || ! in_array(Str::upper($role), array_map(Str::upper(...), $roles), true)) {
+        if ($role === null) {
+            abort(403, 'No tienes permiso para acceder a este módulo.');
+        }
+
+        if (Str::upper($role) === 'SUPERADMIN') {
+            return $next($request);
+        }
+
+        if (! in_array(Str::upper($role), array_map(Str::upper(...), $roles), true)) {
             abort(403, 'No tienes permiso para acceder a este módulo.');
         }
 
