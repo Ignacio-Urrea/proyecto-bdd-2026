@@ -58,7 +58,7 @@ class OracleCrudService
             ':p_cursor',
         );
 
-        return $this->hideCredentials($table, $rows);
+        return $this->hideCredentials($table, $this->normalizeColumnNames($rows));
     }
 
     public function find(string $table, int $id): ?object
@@ -70,7 +70,7 @@ class OracleCrudService
             ':p_cursor',
         );
 
-        return $this->hideCredentials($table, $rows)[0] ?? null;
+        return $this->hideCredentials($table, $this->normalizeColumnNames($rows))[0] ?? null;
     }
 
     public function paginate(string $table, int $perPage = 20): LengthAwarePaginator
@@ -212,6 +212,20 @@ class OracleCrudService
         }
 
         return $table;
+    }
+
+    private function normalizeColumnNames(array $rows): array
+    {
+        return array_map(function (object $row): object {
+            $normalizedRow = new \stdClass();
+
+            foreach ($row as $column => $value) {
+                $normalizedColumn = strtoupper($column);
+                $normalizedRow->{$normalizedColumn} = $value;
+            }
+
+            return $normalizedRow;
+        }, $rows);
     }
 
     private function mutate(callable $operation, string $action, string $resource): void
