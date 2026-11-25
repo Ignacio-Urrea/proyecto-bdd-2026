@@ -1,0 +1,2 @@
+@include('crud.view')
+

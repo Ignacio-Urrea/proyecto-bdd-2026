@@ -27,9 +27,27 @@ El proyecto usa Laravel-OCI8 para conectarse a Oracle. Cada entorno necesita PHP
 
 1. Instala OCI8 para tu version y arquitectura de PHP, y asegúrate de que Oracle Instant Client o el cliente incluido con Oracle XE esté disponible en el `PATH`.
 2. Copia los valores de Oracle de `.env.example` a tu `.env` local si aún no existen. Usa `XEPDB1` como servicio y las credenciales de un usuario de aplicación, no las de `SYSTEM`.
-3. Ejecuta `php artisan migrate` para crear las tablas de Laravel en el esquema de ese usuario.
+3. Ejecuta `php artisan migrate` para crear las tablas de Laravel y el esquema IMAJ en el esquema de ese usuario.
 
 No agregues `.env` ni contraseñas al repositorio. En Windows, reinicia la terminal después de cambiar el `PATH`.
+
+## Mantenedores IMAJ
+
+La aplicación incluye modelos sin prefijo (`Rol`, `Paciente`, etc.) y CRUD web para las 16 tablas. Las tablas y secuencias conservan el prefijo `IMAJ_`. Las operaciones CRUD llaman a `IMAJ_APP_PKG` mediante Laravel-OCI8; los listados y reportes consumen cursores Oracle.
+
+Las vistas de cada modelo están en `resources/views/{modelo}/` (por ejemplo, `resources/views/ciudad/`) y contienen `index`, `create`, `update`, `delete`, `form` y `view`. Los formularios y listados reutilizan plantillas comunes para mantener el mismo comportamiento y facilitar su personalización por modelo.
+
+La capa HTTP usa rutas protegidas por middleware, Form Requests para validar CRUD, autenticación y gestores, y servicios para las operaciones Oracle y flujos de negocio. Las escrituras exitosas emiten `OracleOperationCompleted` después de la transacción; su listener registra solo metadatos de operación, recurso y actor, sin datos clínicos. Por ahora no se agregan Jobs: no hay tareas que deban ejecutarse en segundo plano y los flujos deben responder inmediatamente.
+
+Antes de ejecutar `php artisan migrate`, confirma que las tablas `IMAJ_*` no existan ya en el esquema. Las migraciones crean las tablas y secuencias desde cero; no ejecutes `migrate:fresh` en una base con datos.
+
+Después de migrar, crea el primer administrador de forma interactiva con `php artisan app:create-admin`. La contraseña se solicita de forma oculta y se almacena como hash en `PASSWORD_HASH`; los valores existentes de `CONTRASEÑA` se copian al nuevo campo hasheados, sin borrar ni modificar la columna original.
+
+Perfiles iniciales: `ADMINISTRADOR`, `RECEPCIONISTA`, `TECNICO`, `RADIOLOGO` y `FINANZAS`. Las autorizaciones de rutas están centralizadas en `config/imaj.php`.
+
+La pauta se cubre con cinco gestores (agendar orden, generar presupuesto, registrar pago, actualizar examen y publicar informe), tres reportes (órdenes por sucursal/estado, ingresos mensuales y exámenes por urgencia/estado), `IMAJ_APP_PKG` (CRUD, gestores, reportes y función de total de presupuesto) y triggers de secuencia/auditoría en las 16 tablas.
+
+Los reportes de ingresos usan la fecha de auditoría de cada pago, porque el esquema de pagos no tiene una columna de fecha. La tabla `IMAJ_AUDITORIA` conserva tabla, operación, ID, usuario de aplicación y fecha, pero no copia datos clínicos.
 
 ## Learning Laravel
 
