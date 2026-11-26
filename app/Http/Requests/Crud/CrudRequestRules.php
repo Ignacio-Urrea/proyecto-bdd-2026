@@ -67,7 +67,7 @@ class CrudRequestRules
                 'NOMBRE' => ['required', 'string', 'max:32'],
                 'APELLIDO_P' => ['required', 'string', 'max:32'],
                 'APELLIDO_M' => ['required', 'string', 'max:32'],
-                'RUT' => ['required', 'string', 'max:32'],
+                'RUT' => ['required', 'string', 'regex:/^(?:\d{7,8}|\d{1,2}.\d{3}.\d{3})-?[\dkK]$/'],
                 'TELEFONO' => ['nullable', 'integer'],
             ],
         ],
