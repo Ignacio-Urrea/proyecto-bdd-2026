@@ -59,7 +59,7 @@
             'admin'     => ['orden', 'presupuesto', 'pago', 'examen', 'informe'],
         ];
         $actions = collect($byRole[$group])
-            ->map(fn ($k) => ['def' => $defs[$k], 'url' => $go($k)])
+            ->map(fn ($k) => ['key' => $k, 'def' => $defs[$k], 'url' => $go($k)])
             ->filter(fn ($a) => $a['url'])
             ->values();
 
@@ -108,10 +108,10 @@
                 ['label' => 'Presupuestos por cobrar', 'value' => 11,             'tone' => 'warning', 'go' => 'presupuesto'],
             ],
             default => [
-                ['label' => 'Órdenes de hoy',         'value' => 42,             'tone' => 'primary', 'go' => 'rep:orden'],
-                ['label' => 'Pendientes / ejecutadas','value' => '12 / 30',      'tone' => 'warning', 'go' => 'rep:orden'],
-                ['label' => 'Ingresos del mes',       'value' => '$ 18.430.000', 'tone' => 'success', 'go' => 'rep:ingreso'],
-                ['label' => 'Exámenes urgentes',      'value' => 4,              'tone' => 'danger',  'go' => 'rep:examen'],
+                ['label' => 'Órdenes de hoy',          'value' => 42,             'tone' => 'primary', 'go' => 'rep:orden'],
+                ['label' => 'Pendientes / ejecutadas', 'value' => '12 / 30',      'tone' => 'warning', 'go' => 'rep:orden'],
+                ['label' => 'Ingresos del mes',        'value' => '$ 18.430.000', 'tone' => 'success', 'go' => 'rep:ingreso'],
+                ['label' => 'Exámenes urgentes',       'value' => 4,              'tone' => 'danger',  'go' => 'rep:examen'],
             ],
         };
         $demoQueue = [
@@ -127,16 +127,22 @@
         $urgentes = $queue->where('urgente', true);
         $sucursalNombre = $sucursalNombre ?? null;
 
-        // Estado → variante de badge (colores suaves con buen contraste en tema oscuro)
-        $badge = ['PENDIENTE' => 'warning', 'AGENDADA' => 'info', 'EN_PROCESO' => 'primary', 'EJECUTADA' => 'success', 'INFORMADA' => 'success', 'CANCELADA' => 'secondary'];
+        $badge  = ['PENDIENTE' => 'warning', 'AGENDADA' => 'info', 'EN_PROCESO' => 'primary', 'EJECUTADA' => 'success', 'INFORMADA' => 'success', 'CANCELADA' => 'secondary'];
         $toneOf = fn ($t) => in_array($t, ['primary', 'success', 'warning', 'danger', 'info', 'secondary'], true) ? $t : 'secondary';
 
-        /* ============ 5) DISTRIBUCIÓN ADAPTATIVA ============ */
-        $n         = $actions->count();
-        $cols      = [2 => 2, 3 => 3, 4 => 2, 5 => 3][$n] ?? 3;           // columnas de la grilla de gestores
-        $hasSide   = $kpis->isNotEmpty() || $urgentes->isNotEmpty() || $reports->isNotEmpty();
-        $mainCol   = $hasSide ? 'col-xl-8' : 'col-12';                     // sin columna lateral → tabla al 100 %
-        $indicator = $kpis->first() ?? ['label' => 'En cola', 'value' => $queue->count(), 'tone' => 'primary'];
+        $kpiIcons = [
+            'primary'   => 'bi-calendar2-check',
+            'success'   => 'bi-graph-up-arrow',
+            'warning'   => 'bi-hourglass-split',
+            'danger'    => 'bi-exclamation-diamond',
+            'info'      => 'bi-activity',
+            'secondary' => 'bi-bar-chart',
+        ];
+
+        $hasSide    = $urgentes->isNotEmpty() || $reports->isNotEmpty();
+        $mainCol    = $hasSide ? 'col-xl-8' : 'col-12';
+        $actionCnt  = $actions->count();
+        $primaryKpi = $kpis->first() ?? ['label' => 'En cola', 'value' => $queue->count()];
 
         $hour      = now()->hour;
         $greeting  = $hour < 12 ? 'Buenos días' : ($hour < 20 ? 'Buenas tardes' : 'Buenas noches');
@@ -146,235 +152,703 @@
 
     <style>
         /* =====================================================================
-           HOME BACK-OFFICE · acabado pulido (usa la paleta del tema del sistema)
+           BENTO BACK-OFFICE · Colores sólidos e intensos de la paleta
            ===================================================================== */
-        .bo {
-            --bo-line: color-mix(in srgb, var(--bs-border-color) 70%, transparent);
-            --bo-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 10px 26px -16px rgba(15, 23, 42, .22);
-            --bo-shadow-hover: 0 2px 4px rgba(15, 23, 42, .08), 0 16px 32px -14px rgba(15, 23, 42, .3);
-            --bo-radius: .9rem;
-            --bo-hover: color-mix(in srgb, var(--bs-primary) 8%, var(--bs-body-bg));
-        }
-        [data-bs-theme="dark"] .bo {
-            --bo-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 28px -16px rgba(0, 0, 0, .6);
-            --bo-shadow-hover: 0 2px 4px rgba(0, 0, 0, .4), 0 18px 34px -14px rgba(0, 0, 0, .7);
-        }
-        .bo-t-primary   { --t: var(--bs-primary); }
-        .bo-t-success   { --t: var(--bs-success); }
-        .bo-t-warning   { --t: var(--bs-warning); }
-        .bo-t-danger    { --t: var(--bs-danger); }
-        .bo-t-info      { --t: var(--bs-info); }
-        .bo-t-secondary { --t: var(--bs-secondary); }
+        .vv-dash {
+            --vv-card: #1b1d21;
+            --vv-card-elev: #23262c;
+            --vv-border: rgba(255, 255, 255, 0.08);
+            --vv-border-hover: rgba(255, 255, 255, 0.18);
+            --vv-text: #f3f4f6;
+            --vv-muted: #9aa2b1;
 
-        .bo-label { display: flex; align-items: center; gap: .6rem; margin: 0 0 .75rem; font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--bs-secondary-color); }
-        .bo-label::after { content: ""; flex: 1; height: 1px; background: var(--bo-line); }
+            /* Paleta sólida y saturada */
+            --vv-cream: #F5E6D3;
+            --vv-navy: #28334F;
+            --vv-navy-deep: #1D263D;
+            --vv-blue: #8297D1;
+            --vv-sage: #9FB2B0;
+            --vv-mint: #6BC9C6;
 
-        /* ---------- Encabezado ---------- */
-        .bo-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
-        .bo-head h1 { margin: 0 0 .55rem; font-size: 1.65rem; font-weight: 600; letter-spacing: -.015em; }
-        .bo-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
-        .bo-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .28rem .8rem; font-size: .82rem; line-height: 1.3; color: var(--bs-secondary-color); background: var(--bs-secondary-bg); border: 1px solid var(--bo-line); border-radius: 2rem; }
-        .bo-chip .bi { font-size: .9rem; line-height: 1; }
-        .bo-refresh { display: inline-flex; align-items: center; gap: .45rem; }
-
-        /* ---------- Tarjetas base ---------- */
-        .bo-card { overflow: hidden; background: var(--bs-body-bg); border: 1px solid var(--bo-line); border-radius: var(--bo-radius); box-shadow: var(--bo-shadow); }
-        .bo-card__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--bo-line); }
-        .bo-card__head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
-
-        /* ---------- Gestores: grilla que se adapta a la cantidad ---------- */
-        .bo-actions-wrap { container-type: inline-size; margin-bottom: 1.75rem; }
-        .bo-actions { display: grid; gap: .85rem; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
-        .bo-actions--5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        .bo-actions--5 .bo-area:nth-child(-n+3) { grid-column: span 2; }
-        .bo-actions--5 .bo-area:nth-child(n+4)  { grid-column: span 3; }
-        .bo-actions--1 { grid-template-columns: 1fr; }
-
-        .bo-area { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 1.25rem 1.35rem; color: var(--bs-body-color); text-decoration: none; background: var(--bs-body-bg); border: 1px solid var(--bo-line); border-radius: var(--bo-radius); box-shadow: var(--bo-shadow); transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
-        .bo-area:hover { color: var(--bs-body-color); transform: translateY(-3px); border-color: color-mix(in srgb, var(--bs-primary) 55%, var(--bo-line)); box-shadow: var(--bo-shadow-hover); }
-        .bo-area__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .9rem; }
-        .bo-area__n { font-size: 1.5rem; font-weight: 600; line-height: 1; letter-spacing: -.02em; color: var(--bs-secondary-color); opacity: .5; }
-        .bo-area__ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 2.5rem; height: 2.5rem; font-size: 1.2rem; line-height: 1; color: var(--bs-primary); background: var(--bs-primary-bg-subtle); border-radius: .7rem; transition: transform .2s ease; }
-        .bo-area:hover .bo-area__ico { transform: scale(1.06); }
-        .bo-area strong { display: block; font-size: 1.04rem; font-weight: 600; line-height: 1.25; }
-        .bo-area small { display: block; margin: .25rem 0 1rem; line-height: 1.4; color: var(--bs-secondary-color); }
-        .bo-area__go { display: inline-flex; align-items: center; gap: .4rem; margin-top: auto; font-size: .88rem; font-weight: 600; color: var(--bs-primary); }
-        .bo-area__go .bi { transition: transform .2s ease; }
-        .bo-area:hover .bo-area__go .bi { transform: translateX(4px); }
-
-        /* Tarjeta principal destacada: degradado sutil */
-        .bo-area--main { color: #fff; background: linear-gradient(135deg, var(--bs-primary) 0%, color-mix(in srgb, var(--bs-primary) 66%, #0b1220) 100%); border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 14px 28px -14px color-mix(in srgb, var(--bs-primary) 65%, transparent); }
-        .bo-area--main:hover { color: #fff; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 20px 36px -14px color-mix(in srgb, var(--bs-primary) 75%, transparent); }
-        .bo-area--main .bo-area__n { color: #fff; opacity: .6; }
-        .bo-area--main small { color: rgba(255,255,255,.86); }
-        .bo-area--main .bo-area__go { color: #fff; }
-        .bo-area--main .bo-area__ico { color: #fff; background: rgba(255,255,255,.2); }
-
-        /* Variante ancha: un solo gestor + indicador clave */
-        .bo-area--wide { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 1.25rem 1.5rem; padding: 1.5rem 1.75rem; }
-        .bo-area--wide .bo-area__ico { width: 3.4rem; height: 3.4rem; font-size: 1.6rem; border-radius: 1rem; }
-        .bo-area--wide .bo-area__txt { flex: 1 1 14rem; min-width: 0; }
-        .bo-area--wide strong { font-size: 1.25rem; }
-        .bo-area--wide small { margin: .2rem 0 0; }
-        .bo-ind { display: flex; flex-direction: column; align-items: flex-end; padding: 0 1.5rem; border-left: 1px solid rgba(255,255,255,.28); }
-        .bo-ind span { font-size: .78rem; opacity: .85; }
-        .bo-ind b { font-size: 2.1rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
-        .bo-btn { display: inline-flex; align-items: center; gap: .45rem; padding: .6rem 1.15rem; font-size: .92rem; font-weight: 600; color: var(--bs-primary); background: #fff; border-radius: .65rem; transition: transform .2s ease, box-shadow .2s ease; }
-        .bo-area--wide:hover .bo-btn { transform: translateX(3px); box-shadow: 0 6px 14px -6px rgba(0,0,0,.4); }
-
-        @container (max-width: 34rem) {
-            .bo-actions:not(.bo-actions--1) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-            .bo-actions:not(.bo-actions--1) .bo-area { grid-column: auto !important; }
-            .bo-actions:not(.bo-actions--1) .bo-area:last-child:nth-child(odd) { grid-column: 1 / -1 !important; }
-            .bo-ind { align-items: flex-start; padding: 0; border-left: 0; }
-        }
-        @container (max-width: 22rem) {
-            .bo-actions:not(.bo-actions--1) { grid-template-columns: 1fr !important; }
-            .bo-actions:not(.bo-actions--1) .bo-area:last-child:nth-child(odd) { grid-column: auto !important; }
+            --vv-radius: 1.1rem;
+            --vv-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.65);
+            color: var(--vv-text);
         }
 
-        /* ---------- Tabla ---------- */
-        .bo-scroll { overflow-x: auto; }
-        .bo-table { min-width: 46rem; margin: 0; font-size: .9rem; --bs-table-bg: transparent; --bs-table-color: inherit; border-color: var(--bo-line); }
-        .bo-table > :not(caption) > * > * { padding: .85rem 1.1rem; background-color: var(--bs-body-bg); box-shadow: none; border-bottom-color: var(--bo-line); vertical-align: middle; transition: background-color .15s ease; }
-        .bo-table thead > tr > th { font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; color: var(--bs-secondary-color); background-color: var(--bs-tertiary-bg); }
-        .bo-table tbody > tr:last-child > * { border-bottom: 0; }
-        .bo-table tbody > tr:hover > * { background-color: var(--bo-hover); }
-        .bo-table > tbody > tr.bo-urgent > * { background-color: color-mix(in srgb, var(--bs-danger) 7%, var(--bs-body-bg)); }
-        .bo-table > tbody > tr.bo-urgent:hover > * { background-color: color-mix(in srgb, var(--bs-danger) 13%, var(--bs-body-bg)); }
-        .bo-table > tbody > tr.bo-urgent > td:first-child { box-shadow: inset 3px 0 0 var(--bs-danger); }
-        .bo-table .bo-code { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-        .bo-table .bo-time { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--bs-secondary-color); }
-        /* Última columna (acciones) siempre visible, aunque la tabla tenga scroll horizontal */
-        .bo-table > :not(caption) > * > :last-child { position: sticky; right: 0; z-index: 2; width: 1%; white-space: nowrap; text-align: right; box-shadow: -10px 0 12px -10px rgba(0,0,0,.35); }
-        .bo-link { display: inline-flex; align-items: center; gap: .4rem; padding: .38rem .85rem; font-size: .85rem; font-weight: 600; white-space: nowrap; color: var(--bs-primary); text-decoration: none; background: transparent; border: 1px solid color-mix(in srgb, var(--bs-primary) 55%, transparent); border-radius: .55rem; transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
-        .bo-link .bi { font-size: .8rem; transition: transform .15s ease; }
-        .bo-link:hover { color: #fff; background: var(--bs-primary); border-color: var(--bs-primary); }
-        .bo-link:hover .bi { transform: translateX(2px); }
+        [data-bs-theme="light"] .vv-dash {
+            --vv-card: #ffffff;
+            --vv-card-elev: #f1f5f9;
+            --vv-border: rgba(15, 23, 42, 0.09);
+            --vv-border-hover: rgba(15, 23, 42, 0.2);
+            --vv-text: #0f172a;
+            --vv-muted: #64748b;
+            --vv-shadow: 0 10px 26px -16px rgba(15, 23, 42, 0.2);
+        }
 
-        /* ---------- Badges (alto contraste, tonos suaves) ---------- */
-        .bo-badge { display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .7rem; font-size: .76rem; font-weight: 600; line-height: 1.2; white-space: nowrap; border: 1px solid transparent; border-radius: 2rem; }
-        .bo-badge .bi { font-size: .78rem; line-height: 1; }
-        .bo-badge--primary   { color: var(--bs-primary-text-emphasis);   background: var(--bs-primary-bg-subtle);   border-color: var(--bs-primary-border-subtle); }
-        .bo-badge--success   { color: var(--bs-success-text-emphasis);   background: var(--bs-success-bg-subtle);   border-color: var(--bs-success-border-subtle); }
-        .bo-badge--warning   { color: var(--bs-warning-text-emphasis);   background: var(--bs-warning-bg-subtle);   border-color: var(--bs-warning-border-subtle); }
-        .bo-badge--info      { color: var(--bs-info-text-emphasis);      background: var(--bs-info-bg-subtle);      border-color: var(--bs-info-border-subtle); }
-        .bo-badge--secondary { color: var(--bs-secondary-color);         background: var(--bs-secondary-bg);        border-color: var(--bo-line); }
-        .bo-badge--urgent    { color: #fff; background: color-mix(in srgb, var(--bs-danger) 88%, #000); }
-        .bo-badge--count     { padding: .2rem .65rem; color: var(--bs-secondary-color); background: var(--bs-secondary-bg); border-color: var(--bo-line); font-variant-numeric: tabular-nums; }
+        /* ---------- Separador de sección ---------- */
+        .vv-sec-label {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            margin: 0 0 0.85rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--vv-muted);
+        }
 
-        /* ---------- Resumen / urgentes: valores alineados a la derecha ---------- */
-        .bo-stat { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .85rem; padding: .95rem 1.25rem; color: var(--bs-body-color); text-decoration: none; border-bottom: 1px solid var(--bo-line); transition: background-color .15s ease; }
-        .bo-stat:last-child { border-bottom: 0; }
-        a.bo-stat:hover { color: var(--bs-body-color); background: var(--bo-hover); }
-        .bo-stat__dot { width: .6rem; height: .6rem; background: var(--t, var(--bs-secondary)); border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--t, var(--bs-secondary)) 20%, transparent); }
-        .bo-stat__label { min-width: 0; line-height: 1.3; }
-        .bo-stat__label small { display: block; color: var(--bs-secondary-color); }
-        .bo-stat__v { min-width: 4.5ch; font-size: 1.45rem; font-weight: 600; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-        .bo-stat__end { justify-self: end; }
+        .vv-sec-label::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--vv-border);
+        }
 
-        .bo-rep { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .85rem; padding: .85rem 1.25rem; color: var(--bs-body-color); text-decoration: none; border-bottom: 1px solid var(--bo-line); transition: background-color .15s ease; }
-        .bo-rep:last-child { border-bottom: 0; }
-        .bo-rep:hover { color: var(--bs-body-color); background: var(--bo-hover); }
-        .bo-rep__ico { display: inline-flex; align-items: center; justify-content: center; width: 2.1rem; height: 2.1rem; font-size: 1rem; line-height: 1; color: var(--bs-primary); background: var(--bs-primary-bg-subtle); border-radius: .6rem; }
-        .bo-rep .bi-chevron-right { font-size: .8rem; color: var(--bs-secondary-color); transition: transform .15s ease; }
-        .bo-rep:hover .bi-chevron-right { transform: translateX(3px); }
+        /* ---------- Cabecera ---------- */
+        .vv-topbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.6rem;
+        }
 
-        .bo a:focus-visible, .bo button:focus-visible { outline: 3px solid color-mix(in srgb, var(--bs-primary) 70%, transparent); outline-offset: 2px; }
-        @media (prefers-reduced-motion: reduce) { .bo *, .bo *::before, .bo *::after { transition: none !important; } }
+        .vv-greet {
+            margin: 0 0 0.2rem;
+            font-size: 0.92rem;
+            font-weight: 500;
+            color: var(--vv-muted);
+        }
+
+        .vv-title {
+            margin: 0;
+            font-size: 1.85rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.15;
+            color: var(--vv-text);
+        }
+
+        .vv-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.65rem;
+        }
+
+        .vv-pill-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.48rem;
+            padding: 0.45rem 0.95rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--vv-text);
+            background: var(--vv-card);
+            border: 1px solid var(--vv-border);
+            border-radius: 0.8rem;
+        }
+
+        .vv-segmented {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem;
+            background: var(--vv-card);
+            border: 1px solid var(--vv-border);
+            border-radius: 0.85rem;
+            gap: 0.2rem;
+        }
+
+        .vv-seg-btn {
+            border: 0;
+            background: transparent;
+            color: var(--vv-muted);
+            font-size: 0.82rem;
+            font-weight: 500;
+            padding: 0.38rem 0.9rem;
+            border-radius: 0.65rem;
+            transition: all 0.16s ease;
+            cursor: pointer;
+        }
+
+        .vv-seg-btn:hover {
+            color: var(--vv-text);
+        }
+
+        .vv-seg-btn.is-active {
+            background: var(--vv-navy);
+            color: var(--vv-cream);
+            font-weight: 700;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+        }
+
+        /* ---------- Fila 1: KPIs prominentes ---------- */
+        .vv-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.75rem;
+        }
+
+        .vv-kpi-card {
+            --k-color: var(--vv-blue);
+            --k-ink: var(--vv-navy-deep);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.35rem 1.45rem;
+            background: var(--vv-card);
+            border: 1px solid var(--vv-border);
+            border-radius: var(--vv-radius);
+            box-shadow: var(--vv-shadow);
+            text-decoration: none;
+            color: var(--vv-text);
+            overflow: hidden;
+            transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+        }
+
+        .vv-kpi-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--k-color);
+            opacity: 1;
+        }
+
+        a.vv-kpi-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--k-color);
+            background: var(--vv-card-elev);
+            color: var(--vv-text);
+        }
+
+        .vv-kpi-card--primary { --k-color: var(--vv-blue);  --k-ink: var(--vv-navy-deep); }
+        .vv-kpi-card--success { --k-color: var(--vv-mint);  --k-ink: var(--vv-navy-deep); }
+        .vv-kpi-card--warning { --k-color: var(--vv-sage);  --k-ink: var(--vv-navy-deep); }
+        .vv-kpi-card--danger  { --k-color: var(--vv-cream); --k-ink: var(--vv-navy-deep); }
+
+        .vv-kpi-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .vv-kpi-label {
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: var(--vv-muted);
+            line-height: 1.3;
+        }
+
+        .vv-kpi-ico {
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            background: var(--k-color);
+            color: var(--k-ink);
+            box-shadow: 0 6px 14px -6px var(--k-color);
+            flex-shrink: 0;
+        }
+
+        .vv-kpi-bottom {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .vv-kpi-value {
+            font-size: 2.05rem;
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            font-variant-numeric: tabular-nums;
+            color: var(--vv-text);
+        }
+
+        .vv-kpi-go {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--k-color);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        /* ---------- Fila 2: Gestores prominentes ---------- */
+        .vv-gestor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.85rem;
+        }
+
+        .vv-gestor-card {
+            --g-color: var(--vv-blue);
+            --g-ink: var(--vv-navy-deep);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1.35rem 1.45rem;
+            background: var(--vv-card);
+            border: 1px solid var(--vv-border);
+            border-radius: var(--vv-radius);
+            box-shadow: var(--vv-shadow);
+            text-decoration: none;
+            color: var(--vv-text);
+            transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+        }
+
+        .vv-gestor-card:nth-child(2) { --g-color: var(--vv-cream); }
+        .vv-gestor-card:nth-child(3) { --g-color: var(--vv-mint); }
+        .vv-gestor-card:nth-child(4) { --g-color: var(--vv-sage); }
+        .vv-gestor-card:nth-child(5) { --g-color: var(--vv-blue); }
+
+        .vv-gestor-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--g-color);
+            background: var(--vv-card-elev);
+            color: var(--vv-text);
+        }
+
+        .vv-gestor-card.is-featured {
+            background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
+            border-color: var(--vv-blue);
+            color: var(--vv-cream);
+        }
+
+        .vv-gestor-card.is-featured .vv-gestor-title {
+            color: var(--vv-cream);
+        }
+
+        .vv-gestor-card.is-featured .vv-gestor-desc {
+            color: var(--vv-sage);
+        }
+
+        .vv-gestor-card.is-featured .vv-gestor-num {
+            color: var(--vv-cream);
+            opacity: 0.55;
+        }
+
+        /* Cuando el rol tiene 1 solo gestor: tarjeta ancha destacada */
+        .vv-gestor-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.25rem 1.75rem;
+            padding: 1.65rem 1.85rem;
+            background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
+            border: 1.5px solid var(--vv-blue);
+            border-radius: var(--vv-radius);
+            box-shadow: 0 16px 34px -14px rgba(40, 51, 79, 0.75);
+            text-decoration: none;
+            color: var(--vv-cream);
+            margin-bottom: 1.85rem;
+            transition: transform 0.18s ease, filter 0.18s ease;
+        }
+
+        .vv-gestor-banner:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.06);
+            color: var(--vv-cream);
+        }
+
+        .vv-gestor-banner__ico {
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            background: var(--vv-mint);
+            color: var(--vv-navy-deep);
+            flex-shrink: 0;
+        }
+
+        .vv-gestor-banner__stat {
+            padding: 0 1.5rem;
+            border-left: 1px solid rgba(245, 230, 211, 0.35);
+            text-align: right;
+        }
+
+        .vv-gestor-banner__btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.7rem 1.35rem;
+            border-radius: 0.75rem;
+            background: var(--vv-mint);
+            color: var(--vv-navy-deep);
+            font-weight: 800;
+            font-size: 0.92rem;
+        }
+
+        .vv-gestor-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .vv-gestor-num {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--vv-muted);
+            opacity: 0.55;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .vv-gestor-ico {
+            width: 2.8rem;
+            height: 2.8rem;
+            border-radius: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.28rem;
+            background: var(--g-color);
+            color: var(--g-ink);
+            box-shadow: 0 6px 14px -6px var(--g-color);
+            transition: transform 0.18s ease;
+        }
+
+        .vv-gestor-card:hover .vv-gestor-ico {
+            transform: scale(1.07);
+        }
+
+        .vv-gestor-title {
+            font-size: 1.08rem;
+            font-weight: 700;
+            margin: 0 0 0.3rem;
+            color: var(--vv-text);
+        }
+
+        .vv-gestor-desc {
+            font-size: 0.84rem;
+            color: var(--vv-muted);
+            line-height: 1.4;
+            margin: 0 0 1.15rem;
+        }
+
+        .vv-gestor-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.86rem;
+            font-weight: 700;
+            color: var(--g-color);
+            margin-top: auto;
+        }
+
+        /* ---------- Tarjeta Contenedora Base (Tabla y Lateral) ---------- */
+        .vv-card {
+            background: var(--vv-card);
+            border: 1px solid var(--vv-border);
+            border-radius: var(--vv-radius);
+            box-shadow: var(--vv-shadow);
+            overflow: hidden;
+        }
+
+        .vv-card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 1.15rem 1.4rem;
+            border-bottom: 1px solid var(--vv-border);
+        }
+
+        .vv-card-title {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--vv-text);
+        }
+
+        /* ---------- Tabla Cola de Trabajo ---------- */
+        .vv-table {
+            width: 100%;
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--vv-text);
+            border-collapse: collapse;
+        }
+
+        .vv-table th {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--vv-muted);
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.8rem 1.2rem;
+            border-bottom: 1px solid var(--vv-border);
+            white-space: nowrap;
+        }
+
+        .vv-table td {
+            padding: 0.95rem 1.2rem;
+            border-bottom: 1px solid var(--vv-border);
+            vertical-align: middle;
+        }
+
+        .vv-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .vv-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .vv-table tbody tr.is-urgent {
+            background: rgba(40, 51, 79, 0.55);
+        }
+
+        .vv-table tbody tr.is-urgent td:first-child {
+            box-shadow: inset 4px 0 0 var(--vv-cream);
+        }
+
+        .vv-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.3rem 0.76rem;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .vv-badge--primary   { background: var(--vv-blue);  color: var(--vv-navy-deep); }
+        .vv-badge--success   { background: var(--vv-mint);  color: var(--vv-navy-deep); }
+        .vv-badge--warning   { background: var(--vv-cream); color: var(--vv-navy-deep); }
+        .vv-badge--info      { background: var(--vv-sage);  color: var(--vv-navy-deep); }
+        .vv-badge--secondary { background: var(--vv-navy);  color: var(--vv-cream); border: 1px solid var(--vv-sage); }
+        .vv-badge--urgent    { background: var(--vv-cream); color: var(--vv-navy-deep); border: 1.5px solid var(--vv-navy); font-weight: 800; }
+
+        .vv-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.44rem 0.95rem;
+            border-radius: 0.6rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--vv-cream);
+            background: var(--vv-navy);
+            border: 1px solid var(--vv-blue);
+            text-decoration: none;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .vv-action-btn:hover {
+            background: var(--vv-mint);
+            border-color: var(--vv-mint);
+            color: var(--vv-navy-deep);
+        }
+
+        /* ---------- Lateral: Urgentes y Reportes ---------- */
+        .vv-side-list {
+            padding: 0.85rem 1.1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .vv-side-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            padding: 0.85rem 1rem;
+            border-radius: 0.8rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--vv-border);
+            text-decoration: none;
+            color: var(--vv-text);
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        a.vv-side-item:hover {
+            background: var(--vv-navy);
+            border-color: var(--vv-blue);
+            color: var(--vv-cream);
+        }
+
+        .vv-rep-ico {
+            width: 2.3rem;
+            height: 2.3rem;
+            border-radius: 0.65rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--vv-mint);
+            color: var(--vv-navy-deep);
+            flex-shrink: 0;
+        }
     </style>
 
-    <div class="bo">
+    <div class="vv-dash">
 
         @if($demo)
-            <div class="alert alert-warning py-2 small mb-3" role="note">
-                <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                Mostrando <strong>datos de ejemplo</strong>. Envía <code>$kpis</code> y <code>$queue</code> desde el controlador para ver datos reales.
+            <div class="alert py-2 small mb-3 rounded-3" style="background: var(--vv-navy); border: 1px solid var(--vv-blue); color: var(--vv-cream);" role="note">
+                <i class="bi bi-info-circle me-1" style="color: var(--vv-mint);"></i>
+                Mostrando <strong>datos de ejemplo</strong>. Envía <code>$kpis</code> y <code>$queue</code> desde el controlador para ver métricas reales.
             </div>
         @endif
 
         {{-- ============ ENCABEZADO ============ --}}
-        <div class="bo-head">
+        <div class="vv-topbar">
             <div>
-                <h1>{{ $greeting }}, {{ $firstName }}</h1>
-                <div class="bo-chips">
-                    <span class="bo-chip"><i class="bi bi-person-badge" aria-hidden="true"></i> {{ $roleName }}</span>
-                    @if($sucursalNombre)<span class="bo-chip"><i class="bi bi-building" aria-hidden="true"></i> {{ $sucursalNombre }}</span>@endif
-                    <span class="bo-chip"><i class="bi bi-calendar3" aria-hidden="true"></i> {{ $today }}</span>
-                </div>
+                <p class="vv-greet">{{ $greeting }}, {{ $firstName }}</p>
+                <h1 class="vv-title">Panel operativo</h1>
             </div>
-            <button type="button" class="btn btn-outline-secondary btn-sm bo-refresh" onclick="location.reload()">
-                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Actualizar
-            </button>
-        </div>
 
-        <div class="row g-4">
+            <div class="vv-controls">
+                <span class="vv-pill-badge">
+                    <i class="bi bi-person-badge" style="color: var(--vv-mint);"></i>
+                    {{ $roleName }}
+                </span>
 
-            {{-- ============ COLUMNA PRINCIPAL ============ --}}
-            <div class="{{ $mainCol }}">
-
-                {{-- Gestores --}}
-                <h2 class="bo-label">Gestores</h2>
-                @if($n > 0)
-                    <div class="bo-actions-wrap">
-                        <div class="bo-actions bo-actions--{{ $n }}" style="--cols: {{ $cols }}">
-                            @foreach($actions as $a)
-                                @if($n === 1)
-                                    {{-- Un solo gestor: tarjeta ancha con indicador clave --}}
-                                    <a class="bo-area bo-area--main bo-area--wide" href="{{ $a['url'] }}">
-                                        <span class="bo-area__ico" aria-hidden="true"><i class="bi {{ $a['def'][1] }}"></i></span>
-                                        <span class="bo-area__txt">
-                                            <strong>{{ $a['def'][0] }}</strong>
-                                            <small>{{ $a['def'][2] }}</small>
-                                        </span>
-                                        <span class="bo-ind" aria-label="{{ $indicator['label'] }}: {{ $indicator['value'] }}">
-                                            <span>{{ $indicator['label'] }}</span>
-                                            <b>{{ $indicator['value'] }}</b>
-                                        </span>
-                                        <span class="bo-btn">Abrir <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
-                                    </a>
-                                @else
-                                    <a class="bo-area{{ $loop->first ? ' bo-area--main' : '' }}" href="{{ $a['url'] }}">
-                                        <span class="bo-area__top">
-                                            <span class="bo-area__n" aria-hidden="true">{{ str_pad($loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
-                                            <span class="bo-area__ico" aria-hidden="true"><i class="bi {{ $a['def'][1] }}"></i></span>
-                                        </span>
-                                        <strong>{{ $a['def'][0] }}</strong>
-                                        <small>{{ $a['def'][2] }}</small>
-                                        <span class="bo-area__go">Abrir <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
-                                    </a>
-                                @endif
-                            @endforeach
-                        </div>
-                    </div>
-                @else
-                    {{-- Respaldo: si los nombres del menú no coinciden, igual se muestran tus módulos --}}
-                    <div class="d-flex flex-wrap gap-2 mb-4">
-                        @forelse($nav as $m)
-                            <a class="btn btn-outline-primary btn-sm" href="{{ $m['url'] }}">{{ $m['label'] }}</a>
-                        @empty
-                            <span class="text-body-secondary">Tu perfil no tiene módulos habilitados.</span>
-                        @endforelse
-                    </div>
+                @if($sucursalNombre)
+                    <span class="vv-pill-badge">
+                        <i class="bi bi-building" style="color: var(--vv-blue);"></i>
+                        {{ $sucursalNombre }}
+                    </span>
                 @endif
 
-                {{-- Cola de trabajo --}}
-                <h2 class="bo-label">Cola de trabajo</h2>
-                <section class="bo-card" aria-labelledby="bo-queue">
-                    <div class="bo-card__head">
-                        <h2 id="bo-queue">{{ $queueTitle }}</h2>
-                        <span class="bo-badge bo-badge--count">{{ $queue->count() }}</span>
+                <div class="vv-segmented">
+                    <span class="vv-seg-btn is-active">{{ $today }}</span>
+                    <button type="button" class="vv-seg-btn" onclick="location.reload()" title="Actualizar datos">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {{-- ============ BLOQUE 1: INDICADORES CLAVE (KPIs PROMINENTES) ============ --}}
+        @if($kpis->isNotEmpty())
+            <h2 class="vv-sec-label">Resumen del turno</h2>
+            <div class="vv-kpi-grid">
+                @foreach($kpis as $k)
+                    @php
+                        $tone = $toneOf($k['tone'] ?? null);
+                        $href = $k['url'] ?? (isset($k['go']) ? $go($k['go']) : null);
+                        if ($href && ! empty($k['query'])) {
+                            $href .= (str_contains($href, '?') ? '&' : '?') . http_build_query($k['query']);
+                        }
+                    @endphp
+                    <{{ $href ? 'a' : 'div' }} class="vv-kpi-card vv-kpi-card--{{ $tone }}" @if($href) href="{{ $href }}" @endif>
+                        <div class="vv-kpi-top">
+                            <span class="vv-kpi-label">{{ $k['label'] }}</span>
+                            <span class="vv-kpi-ico">
+                                <i class="bi {{ $kpiIcons[$tone] ?? 'bi-bar-chart' }}"></i>
+                            </span>
+                        </div>
+                        <div class="vv-kpi-bottom">
+                            <span class="vv-kpi-value">{{ $k['value'] }}</span>
+                            @if($href)
+                                <span class="vv-kpi-go">Ver <i class="bi bi-arrow-right"></i></span>
+                            @endif
+                        </div>
+                    </{{ $href ? 'a' : 'div' }}>
+                @endforeach
+            </div>
+        @endif
+
+        {{-- ============ BLOQUE 2: GESTORES DEL ROL ============ --}}
+        <h2 class="vv-sec-label">Gestores disponibles</h2>
+        @if($actionCnt === 1)
+            @php $single = $actions->first(); @endphp
+            <a href="{{ $single['url'] }}" class="vv-gestor-banner">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="vv-gestor-banner__ico">
+                        <i class="bi {{ $single['def'][1] }}"></i>
+                    </span>
+                    <div>
+                        <div class="fs-4 fw-bold lh-sm">{{ $single['def'][0] }}</div>
+                        <div style="opacity: 0.9; font-size: 0.92rem;">{{ $single['def'][2] }}</div>
                     </div>
-                    <div class="bo-scroll">
-                        <table class="table bo-table">
+                </div>
+
+                <div class="d-flex align-items-center gap-4 ms-auto">
+                    <div class="vv-gestor-banner__stat d-none d-sm-block">
+                        <div style="font-size: 0.78rem; opacity: 0.88;">{{ $primaryKpi['label'] }}</div>
+                        <div class="fs-2 fw-bold lh-1">{{ $primaryKpi['value'] }}</div>
+                    </div>
+                    <span class="vv-gestor-banner__btn">
+                        Abrir gestor <i class="bi bi-arrow-right"></i>
+                    </span>
+                </div>
+            </a>
+        @elseif($actionCnt > 1)
+            <div class="vv-gestor-grid">
+                @foreach($actions as $a)
+                    <a href="{{ $a['url'] }}" class="vv-gestor-card {{ $loop->first ? 'is-featured' : '' }}">
+                        <div>
+                            <div class="vv-gestor-top">
+                                <span class="vv-gestor-num">{{ str_pad($loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
+                                <span class="vv-gestor-ico">
+                                    <i class="bi {{ $a['def'][1] }}"></i>
+                                </span>
+                            </div>
+                            <h3 class="vv-gestor-title">{{ $a['def'][0] }}</h3>
+                            <p class="vv-gestor-desc">{{ $a['def'][2] }}</p>
+                        </div>
+                        <span class="vv-gestor-cta">
+                            Abrir gestor <i class="bi bi-arrow-right"></i>
+                        </span>
+                    </a>
+                @endforeach
+            </div>
+        @else
+            <div class="d-flex flex-wrap gap-2 mb-4">
+                @forelse($nav as $m)
+                    <a class="vv-action-btn" href="{{ $m['url'] }}">{{ $m['label'] }}</a>
+                @empty
+                    <span class="text-secondary">Tu perfil no tiene módulos habilitados.</span>
+                @endforelse
+            </div>
+        @endif
+
+        {{-- ============ BLOQUE 3: COLA DE TRABAJO + URGENTES / REPORTES ============ --}}
+        <div class="row g-4">
+            <div class="{{ $mainCol }}">
+                <h2 class="vv-sec-label">Cola de trabajo</h2>
+                <section class="vv-card">
+                    <div class="vv-card-head">
+                        <div>
+                            <h3 class="vv-card-title">{{ $queueTitle }}</h3>
+                            <span style="font-size: 0.78rem; color: var(--vv-muted);">Ordenado por prioridad clínica y hora</span>
+                        </div>
+                        <span class="vv-pill-badge">{{ $queue->count() }} registros</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="vv-table">
                             <thead>
                                 <tr>
-                                    <th scope="col">Orden</th>
-                                    <th scope="col">Paciente</th>
-                                    <th scope="col">Examen</th>
-                                    <th scope="col">Hora</th>
-                                    <th scope="col">Estado</th>
-                                    <th scope="col"><span class="visually-hidden">Acción</span></th>
+                                    <th>Orden</th>
+                                    <th>Paciente</th>
+                                    <th>Examen</th>
+                                    <th>Hora</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Acción</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -383,31 +857,39 @@
                                         $estado = strtoupper((string) ($row['estado'] ?? ''));
                                         $rowUrl = $row['url'] ?? ($rowBase ? $rowBase . '?orden=' . urlencode($row['id'] ?? $row['orden']) : null);
                                     @endphp
-                                    <tr class="{{ ! empty($row['urgente']) ? 'bo-urgent' : '' }}">
-                                        <td class="bo-code">{{ $row['orden'] }}</td>
+                                    <tr class="{{ ! empty($row['urgente']) ? 'is-urgent' : '' }}">
+                                        <td class="fw-bold text-nowrap" style="font-variant-numeric: tabular-nums;">{{ $row['orden'] }}</td>
                                         <td>{{ $row['paciente'] }}</td>
                                         <td>
-                                            <span class="d-inline-flex flex-wrap align-items-center gap-2">
-                                                {{ $row['examen'] }}
+                                            <div class="d-inline-flex flex-wrap align-items-center gap-2">
+                                                <span>{{ $row['examen'] }}</span>
                                                 @if(! empty($row['urgente']))
-                                                    <span class="bo-badge bo-badge--urgent"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Urgente</span>
+                                                    <span class="vv-badge vv-badge--urgent">
+                                                        <i class="bi bi-exclamation-triangle-fill"></i> Urgente
+                                                    </span>
                                                 @endif
-                                            </span>
+                                            </div>
                                         </td>
-                                        <td class="bo-time">{{ $row['hora'] ?? '—' }}</td>
+                                        <td style="color: var(--vv-muted); font-variant-numeric: tabular-nums;">{{ $row['hora'] ?? '—' }}</td>
                                         <td>
-                                            <span class="bo-badge bo-badge--{{ $badge[$estado] ?? 'secondary' }}">
+                                            <span class="vv-badge vv-badge--{{ $badge[$estado] ?? 'secondary' }}">
                                                 {{ \Illuminate\Support\Str::title(str_replace('_', ' ', strtolower($estado))) }}
                                             </span>
                                         </td>
-                                        <td>
+                                        <td class="text-end">
                                             @if($rowUrl)
-                                                <a class="bo-link" href="{{ $rowUrl }}">{{ $rowLabel }} <i class="bi bi-arrow-right" aria-hidden="true"></i><span class="visually-hidden"> orden {{ $row['orden'] }}</span></a>
+                                                <a href="{{ $rowUrl }}" class="vv-action-btn">
+                                                    {{ $rowLabel }} <i class="bi bi-arrow-right"></i>
+                                                </a>
                                             @endif
                                         </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="6" class="text-center text-body-secondary py-5">No hay elementos en la cola.</td></tr>
+                                    <tr>
+                                        <td colspan="6" class="text-center py-5" style="color: var(--vv-muted);">
+                                            No hay elementos pendientes en la cola.
+                                        </td>
+                                    </tr>
                                 @endforelse
                             </tbody>
                         </table>
@@ -415,58 +897,57 @@
                 </section>
             </div>
 
-            {{-- ============ COLUMNA LATERAL (solo si hay contenido) ============ --}}
             @if($hasSide)
                 <div class="col-xl-4">
+                    <div class="d-flex flex-column gap-4">
+                        @if($urgentes->isNotEmpty())
+                            <div>
+                                <h2 class="vv-sec-label">Prioridad alta</h2>
+                                <section class="vv-card">
+                                    <div class="vv-card-head">
+                                        <h3 class="vv-card-title">Exámenes urgentes</h3>
+                                        <span class="vv-badge vv-badge--urgent">{{ $urgentes->count() }}</span>
+                                    </div>
+                                    <div class="vv-side-list">
+                                        @foreach($urgentes->take(4) as $u)
+                                            <div class="vv-side-item">
+                                                <div class="min-w-0">
+                                                    <div class="fw-bold" style="font-size: 0.9rem;">{{ $u['orden'] }}</div>
+                                                    <div class="text-truncate" style="font-size: 0.8rem; color: var(--vv-muted);">{{ $u['examen'] }}</div>
+                                                </div>
+                                                <span class="vv-badge vv-badge--urgent">Urgente</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </section>
+                            </div>
+                        @endif
 
-                    {{-- Resumen --}}
-                    @if($kpis->isNotEmpty())
-                        <h2 class="bo-label">Resumen</h2>
-                        <section class="bo-card mb-4" aria-label="Resumen">
-                            @foreach($kpis as $k)
-                                @php
-                                    $href = $k['url'] ?? (isset($k['go']) ? $go($k['go']) : null);
-                                    if ($href && ! empty($k['query'])) { $href .= (str_contains($href, '?') ? '&' : '?') . http_build_query($k['query']); }
-                                @endphp
-                                <{{ $href ? 'a' : 'div' }} class="bo-stat bo-t-{{ $toneOf($k['tone'] ?? null) }}" @if($href) href="{{ $href }}" @endif>
-                                    <span class="bo-stat__dot" aria-hidden="true"></span>
-                                    <span class="bo-stat__label">{{ $k['label'] }}</span>
-                                    <span class="bo-stat__v">{{ $k['value'] }}</span>
-                                </{{ $href ? 'a' : 'div' }}>
-                            @endforeach
-                        </section>
-                    @endif
-
-                    {{-- Urgentes --}}
-                    @if($urgentes->isNotEmpty())
-                        <h2 class="bo-label">Urgentes</h2>
-                        <section class="bo-card mb-4" aria-label="Exámenes urgentes">
-                            @foreach($urgentes->take(4) as $u)
-                                <div class="bo-stat bo-t-danger">
-                                    <span class="bo-stat__dot" aria-hidden="true"></span>
-                                    <span class="bo-stat__label">
-                                        <strong class="d-block">{{ $u['orden'] }}</strong>
-                                        <small>{{ $u['examen'] }}</small>
-                                    </span>
-                                    <span class="bo-badge bo-badge--urgent bo-stat__end">Urgente</span>
-                                </div>
-                            @endforeach
-                        </section>
-                    @endif
-
-                    {{-- Reportes (administración y finanzas) --}}
-                    @if($reports->isNotEmpty())
-                        <h2 class="bo-label">Reportes</h2>
-                        <section class="bo-card" aria-label="Reportes">
-                            @foreach($reports as $r)
-                                <a class="bo-rep" href="{{ $r['url'] }}">
-                                    <span class="bo-rep__ico" aria-hidden="true"><i class="bi {{ $r['def'][1] }}"></i></span>
-                                    <span>{{ $r['def'][0] }}</span>
-                                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
-                                </a>
-                            @endforeach
-                        </section>
-                    @endif
+                        @if($reports->isNotEmpty())
+                            <div>
+                                <h2 class="vv-sec-label">Analítica</h2>
+                                <section class="vv-card">
+                                    <div class="vv-card-head">
+                                        <h3 class="vv-card-title">Reportes del sistema</h3>
+                                        <i class="bi bi-bar-chart-line" style="color: var(--vv-muted);"></i>
+                                    </div>
+                                    <div class="vv-side-list">
+                                        @foreach($reports as $r)
+                                            <a href="{{ $r['url'] }}" class="vv-side-item">
+                                                <span class="d-inline-flex align-items-center gap-3">
+                                                    <span class="vv-rep-ico">
+                                                        <i class="bi {{ $r['def'][1] }}"></i>
+                                                    </span>
+                                                    <span class="fw-medium" style="font-size: 0.88rem;">{{ $r['def'][0] }}</span>
+                                                </span>
+                                                <i class="bi bi-chevron-right" style="color: var(--vv-muted); font-size: 0.82rem;"></i>
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                </section>
+                            </div>
+                        @endif
+                    </div>
                 </div>
             @endif
         </div>
