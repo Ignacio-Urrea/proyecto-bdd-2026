@@ -25,6 +25,18 @@ class UsuarioController extends CrudController
 
     public static function roleOptions(): array
     {
-        return app(OracleCrudService::class)->options('IMAJ_ROLES', 'NOMBRE_ROL');
+        $assignableRoles = array_map(
+            static fn (string $role): string => strtoupper(trim($role)),
+            config('imaj.assignable_user_roles', []),
+        );
+
+        return collect(app(OracleCrudService::class)->rows('IMAJ_ROLES'))
+            ->filter(static fn (object $role): bool => in_array(
+                strtoupper(trim((string) $role->NOMBRE_ROL)),
+                $assignableRoles,
+                true,
+            ))
+            ->mapWithKeys(static fn (object $role): array => [$role->ID => $role->NOMBRE_ROL])
+            ->all();
     }
 }

@@ -495,15 +495,43 @@
             return 'bi-circle';
         };
 
-        // Solo módulos con ruta existente y permitidos para el rol actual, agrupados por 'group' (opcional).
+        $canViewMenuItem = static fn (array $item): bool => isset($item['route'], $item['permission'])
+            && \Illuminate\Support\Facades\Route::has($item['route'])
+            && in_array($roleKey, config('imaj.permissions.' . $item['permission'], []), true);
+
+        $moduleOrder = collect(config('imaj.modules', []))
+            ->pluck('route')
+            ->flip();
+
         $menuGroups = collect(config('imaj.navigation', []))
-            ->filter(fn ($item) => \Illuminate\Support\Facades\Route::has($item['route'])
-                && in_array($roleKey, config('imaj.permissions.' . $item['permission'], []), true))
+            ->map(function (array $item) use ($canViewMenuItem): ?array {
+                if (isset($item['children'])) {
+                    $item['children'] = collect($item['children'])
+                        ->filter($canViewMenuItem)
+                        ->values()
+                        ->all();
+
+                    return $item;
+                }
+
+                return $canViewMenuItem($item) ? $item : null;
+            })
+            ->filter(static fn (?array $item): bool => $item !== null
+                && (! isset($item['children']) || $item['children'] !== []))
+            ->sortBy(static function (array $item) use ($moduleOrder): int {
+                if (isset($item['children'])) {
+                    return $moduleOrder->count();
+                }
+
+                $moduleRoute = \Illuminate\Support\Str::beforeLast($item['route'], '.');
+
+                return $moduleOrder->get($moduleRoute, $moduleOrder->count());
+            })
             ->groupBy(fn ($item) => $item['group'] ?? 'MÓDULOS');
 
         $isActive = function (array $item): bool {
             $patterns = [$item['route']];
-            if (\Illuminate\Support\Str::contains($item['route'], '.')) {
+            if (\Illuminate\Support\Str::endsWith($item['route'], ['.index', '.create', '.show', '.edit'])) {
                 $patterns[] = \Illuminate\Support\Str::beforeLast($item['route'], '.') . '.*';
             }
             return request()->routeIs(...$patterns);
@@ -621,15 +649,40 @@
                         @foreach($menuGroups as $groupName => $items)
                             <li class="nav-header">{{ \Illuminate\Support\Str::upper($groupName) }}</li>
                             @foreach($items as $item)
-                                @php $active = $isActive($item); @endphp
-                                <li class="nav-item">
-                                    <a class="nav-link{{ $active ? ' active' : '' }}"
-                                       href="{{ route($item['route']) }}"
-                                       @if($active) aria-current="page" @endif>
-                                        <i class="nav-icon bi {{ $iconFor($item) }}" aria-hidden="true"></i>
-                                        <p>{{ $item['label'] }}</p>
-                                    </a>
-                                </li>
+                                @if(isset($item['children']))
+                                    @php $groupActive = collect($item['children'])->contains(fn (array $child): bool => $isActive($child)); @endphp
+                                    <li class="nav-item{{ $groupActive ? ' menu-open' : '' }}">
+                                        <a class="nav-link{{ $groupActive ? ' active' : '' }}"
+                                           href="#"
+                                           aria-expanded="{{ $groupActive ? 'true' : 'false' }}">
+                                            <i class="nav-icon bi {{ $iconFor($item) }}" aria-hidden="true"></i>
+                                            <p>{{ $item['label'] }}<i class="nav-arrow bi bi-chevron-right" aria-hidden="true"></i></p>
+                                        </a>
+                                        <ul class="nav nav-treeview">
+                                            @foreach($item['children'] as $child)
+                                                @php $active = $isActive($child); @endphp
+                                                <li class="nav-item">
+                                                    <a class="nav-link{{ $active ? ' active' : '' }}"
+                                                       href="{{ route($child['route']) }}"
+                                                       @if($active) aria-current="page" @endif>
+                                                        <i class="nav-icon bi bi-circle" aria-hidden="true"></i>
+                                                        <p>{{ $child['label'] }}</p>
+                                                    </a>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </li>
+                                @else
+                                    @php $active = $isActive($item); @endphp
+                                    <li class="nav-item">
+                                        <a class="nav-link{{ $active ? ' active' : '' }}"
+                                           href="{{ route($item['route']) }}"
+                                           @if($active) aria-current="page" @endif>
+                                            <i class="nav-icon bi {{ $iconFor($item) }}" aria-hidden="true"></i>
+                                            <p>{{ $item['label'] }}</p>
+                                        </a>
+                                    </li>
+                                @endif
                             @endforeach
                         @endforeach
 

@@ -8,17 +8,16 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $columns = DB::table('USER_TAB_COLUMNS')
+        $columnExists = static fn (string $column): bool => DB::table('USER_TAB_COLUMNS')
             ->where('TABLE_NAME', 'IMAJ_USUARIOS')
-            ->pluck('COLUMN_NAME')
-            ->map(static fn (string $column): string => strtoupper($column))
-            ->all();
+            ->where('COLUMN_NAME', $column)
+            ->exists();
 
-        if (! in_array('CONTRASEÑA', $columns, true)) {
+        if (! $columnExists('CONTRASEÑA')) {
             throw new RuntimeException('No existe la columna CONTRASEÑA en IMAJ_USUARIOS.');
         }
 
-        $hasPasswordHash = in_array('PASSWORD_HASH', $columns, true);
+        $hasPasswordHash = $columnExists('PASSWORD_HASH');
 
         DB::statement('ALTER TABLE IMAJ_USUARIOS MODIFY (CONTRASEÑA VARCHAR2(255))');
 
@@ -29,9 +28,16 @@ return new class extends Migration
         }
 
         foreach ($query->orderBy('ID')->cursor() as $user) {
+            $values = [];
+
+            foreach ((array) $user as $column => $value) {
+                $values[mb_strtoupper($column, 'UTF-8')] = $value;
+            }
+
+            $legacyPassword = $values['CONTRASEÑA'] ?? null;
             $storedPassword = $hasPasswordHash
-                ? ($user->PASSWORD_HASH ?: $user->{'CONTRASEÑA'})
-                : $user->{'CONTRASEÑA'};
+                ? (($values['PASSWORD_HASH'] ?? null) ?: $legacyPassword)
+                : $legacyPassword;
 
             if ($storedPassword === null) {
                 continue;
@@ -43,9 +49,9 @@ return new class extends Migration
                 $storedPassword = Hash::make($storedPassword);
             }
 
-            if ($user->{'CONTRASEÑA'} !== $storedPassword) {
+            if ($legacyPassword !== $storedPassword) {
                 DB::table('IMAJ_USUARIOS')
-                    ->where('ID', $user->ID)
+                    ->where('ID', $values['ID'])
                     ->update(['CONTRASEÑA' => $storedPassword]);
             }
         }
