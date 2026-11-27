@@ -51,39 +51,65 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
 
         $urgentesCnt = DB::table('IMAJ_EXAMENES')
             ->where('URGENCIA', 1)
-            ->where('ESTADO', '<>', 2)
+            ->whereIn('ESTADO', [1, 2])
             ->count();
 
         $kpis = [
-            ['label' => 'Órdenes de hoy',          'value' => $ordenesHoy,                                      'tone' => 'primary', 'go' => 'rep:orden'],
+            ['label' => 'Órdenes de hoy',          'value' => $ordenesHoy,                                      'tone' => 'primary', 'url' => url('/ordenes')],
             ['label' => 'Pendientes / ejecutadas', 'value' => "{$pendientes} / {$ejecutadas}",                 'tone' => 'warning', 'go' => 'rep:orden'],
             ['label' => 'Ingresos del mes',        'value' => '$ ' . number_format($ingresosMes, 0, ',', '.'), 'tone' => 'success', 'go' => 'rep:ingreso'],
             ['label' => 'Exámenes urgentes',       'value' => $urgentesCnt,                                     'tone' => 'danger',  'go' => 'rep:examen'],
         ];
 
-        $queue = DB::table('IMAJ_ORDENES as o')
+        $ordenesSeguimiento = DB::table('IMAJ_ORDENES as o')
             ->join('IMAJ_PACIENTES as p', 'p.ID', '=', 'o.PACIENTE_ID')
             ->leftJoin('IMAJ_EXAMENES as e', 'e.ORDEN_ID', '=', 'o.ID')
             ->leftJoin('IMAJ_PRESUPUESTOS as pr', 'pr.ORDEN_ID', '=', 'o.ID')
             ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
             ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
+            ->whereRaw('NVL(o.EJECUTADA, 0) = 0')
+            ->whereRaw('NVL(o.ESTADO, 0) <> 3')
             ->select(
                 'o.ID as id',
                 DB::raw("'ORD-' || o.ID as orden"),
                 DB::raw("p.NOMBRE || ' ' || p.APELLIDO_P as paciente"),
                 DB::raw("NVL(prest.NOMBRE, 'Examen radiológico') as examen"),
-                DB::raw("LPAD(o.HORA_CITA, 2, '0') || ':00' as hora"),
-                DB::raw("CASE o.ESTADO WHEN 3 THEN 'EJECUTADA' WHEN 2 THEN 'EN_PROCESO' ELSE 'PENDIENTE' END as estado"),
-                DB::raw("NVL(e.URGENCIA, 0) as urgente")
+                'o.HORA_CITA as hora_cita',
+                DB::raw("CASE o.ESTADO WHEN 0 THEN 'AGENDADA' WHEN 1 THEN 'PENDIENTE' WHEN 2 THEN 'EN_PROCESO' WHEN 3 THEN 'EJECUTADA' ELSE 'PENDIENTE' END as estado"),
+                DB::raw("CASE WHEN NVL(e.URGENCIA, 0) = 1 AND e.ESTADO IN (1, 2) THEN 1 ELSE 0 END as urgente")
             )
             ->orderByDesc('urgente')
             ->orderBy('o.ID')
             ->limit(20)
             ->get()
-            ->map(fn ($r) => (array) $r)
+            ->map(fn ($r) => array_change_key_case((array) $r, CASE_LOWER))
             ->all();
 
-        return view('crud.home', compact('kpis', 'queue'));
+        $examenesUrgentes = DB::table('IMAJ_EXAMENES as e')
+            ->join('IMAJ_ORDENES as o', 'o.ID', '=', 'e.ORDEN_ID')
+            ->leftJoin('IMAJ_PRESUPUESTOS as pr', 'pr.ORDEN_ID', '=', 'o.ID')
+            ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
+            ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
+            ->where('e.URGENCIA', 1)
+            ->whereIn('e.ESTADO', [1, 2])
+            ->select(
+                'e.ID as id',
+                'o.ID as orden_id',
+                DB::raw("'ORD-' || o.ID as orden"),
+                DB::raw("MIN(NVL(prest.NOMBRE, 'Examen radiológico')) as examen")
+            )
+            ->groupBy('e.ID', 'o.ID')
+            ->orderBy('o.ID')
+            ->limit(20)
+            ->get()
+            ->map(fn ($r) => array_change_key_case((array) $r, CASE_LOWER))
+            ->all();
+
+        return view('crud.home', [
+            'kpis' => $kpis,
+            'queue' => $ordenesSeguimiento,
+            'examenesUrgentes' => $examenesUrgentes,
+        ]);
     })->name('dashboard');
 
     $resources = [

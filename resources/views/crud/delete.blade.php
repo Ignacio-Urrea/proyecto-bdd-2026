@@ -1,6 +1,7 @@
 @php
     $title     = $title ?? 'Registro';
     $routeName = $routeName ?? '';
+    $statusLabels = config('imaj.status_labels.'.$routeName, []);
     $pageTitle = 'Eliminar ' . $title;
     $backUrl   = $routeName && \Illuminate\Support\Facades\Route::has($routeName . '.index')
         ? route($routeName . '.index')
@@ -428,6 +429,9 @@
                             $name   = $field['name'];
                             $type   = $field['type'] ?? 'text';
                             $value  = data_get($record, $name);
+                            $displayValue = $name === 'ESTADO' && $value !== null
+                                ? ($statusLabels[(string) $value] ?? $value)
+                                : $value;
                             $isBool = in_array($name, ['HABILITADA', 'EJECUTADA', 'ADENDUM'], true);
 
                             if ($isLongField($field)) {
@@ -462,7 +466,7 @@
                                         </span>
                                     @endif
                                 @elseif($value !== null && $value !== '')
-                                    {{ $value }}
+                                    {{ $displayValue }}
                                 @else
                                     <span style="color: var(--vv-muted);">—</span>
                                 @endif

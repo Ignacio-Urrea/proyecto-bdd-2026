@@ -10,13 +10,12 @@
         $roleKey  = strtoupper((string) $roleName);
         $plain    = fn ($v) => \Illuminate\Support\Str::lower(\Illuminate\Support\Str::ascii((string) $v));
 
-        // Grupo de interfaz (el controlador puede pasar $roleGroup para forzarlo)
         $group = $roleGroup ?? match ($roleKey) {
             'RECEPCIONISTA' => 'recepcion',
             'TECNICO'       => 'tecnico',
             'RADIOLOGO'     => 'radiologo',
             'FINANZAS'      => 'finanzas',
-            default         => 'admin',   // SUPERADMIN, ADMINISTRADOR, CLINICA_ADMIN, SUCURSAL_ADMIN
+            default         => 'admin',
         };
 
         /* ============ 2) ENLACES (desde config/imaj.php, con permisos) ============ */
@@ -42,7 +41,6 @@
             return null;
         };
 
-        // Busca primero "Gestor: <k>" y, si es un módulo directo (ej. Pacientes o Imágenes), cae al módulo base
         $go = function (string $k) use ($find) {
             if (str_starts_with($k, 'rep:')) {
                 return $find(['reporte', substr($k, 4)]);
@@ -93,9 +91,8 @@
             'finanzas'  => ['Presupuestos por cobrar', 'pago',        'Registrar pago'],
             default     => ['Órdenes en seguimiento',  'orden',       'Ver orden'],
         };
-        $rowBase = $go($rowKey);
 
-        /* ============ 4) DATOS (el controlador puede enviar $kpis, $queue, $sucursalNombre) ============ */
+        /* ============ 4) DATOS ============ */
         $demoKpis = match ($group) {
             'recepcion' => [
                 ['label' => 'Citas de hoy',            'value' => 18, 'tone' => 'primary', 'go' => 'orden'],
@@ -132,9 +129,16 @@
             ['id' => 5, 'orden' => 'ORD-24821', 'paciente' => 'Paciente de ejemplo E', 'examen' => 'Mamografía bilateral','hora' => '12:00', 'estado' => 'EJECUTADA',  'urgente' => false],
         ];
 
-        $kpis     = collect($kpis ?? $demoKpis);
-        $queue    = collect($queue ?? $demoQueue)->sortByDesc('urgente')->values();
-        $urgentes = $queue->where('urgente', true);
+        $kpis = collect($kpis ?? $demoKpis);
+        $queue = collect($queue ?? $demoQueue)
+            ->filter(function ($item) {
+                $arr = is_array($item) ? $item : (array) $item;
+                $estado = strtoupper((string) ($arr['estado'] ?? $arr['ESTADO'] ?? ''));
+                $ejecutada = (int) ($arr['ejecutada'] ?? $arr['EJECUTADA'] ?? 0);
+                return $ejecutada !== 1 && ! in_array($estado, ['EJECUTADA', 'INFORMADA'], true);
+            })
+            ->sortByDesc(fn ($item) => ! empty(is_array($item) ? ($item['urgente'] ?? false) : ($item->urgente ?? false)))
+            ->values();
         $sucursalNombre = $sucursalNombre ?? null;
 
         $badge  = ['PENDIENTE' => 'warning', 'AGENDADA' => 'info', 'EN_PROCESO' => 'primary', 'EJECUTADA' => 'success', 'INFORMADA' => 'success', 'CANCELADA' => 'secondary'];
@@ -149,8 +153,6 @@
             'secondary' => 'bi-bar-chart',
         ];
 
-        $hasSide    = $urgentes->isNotEmpty() || $reports->isNotEmpty();
-        $mainCol    = $hasSide ? 'col-xl-8' : 'col-12';
         $actionCnt  = $actions->count();
         $primaryKpi = $kpis->first() ?? ['label' => 'En cola', 'value' => $queue->count()];
 
@@ -161,18 +163,12 @@
     @endphp
 
     <style>
-        /* =====================================================================
-           BENTO BACK-OFFICE · Flujo clínico ordenado + brillo celeste
-           ===================================================================== */
         .vv-dash {
             --vv-card: #1b1d21;
             --vv-card-elev: #23262c;
-            --vv-border: rgba(107, 201, 198, 0.16);
-            --vv-border-hover: rgba(107, 201, 198, 0.45);
+            --vv-border: rgba(107, 201, 198, 0.14);
             --vv-text: #f3f4f6;
             --vv-muted: #9aa2b1;
-
-            /* Paleta sólida y saturada */
             --vv-cream: #F5E6D3;
             --vv-navy: #28334F;
             --vv-navy-deep: #1D263D;
@@ -180,13 +176,9 @@
             --vv-sage: #9FB2B0;
             --vv-mint: #6BC9C6;
             --vv-mint-bright: #88E5E2;
-
-            /* Brillos celestes */
-            --vv-glow: 0 0 22px rgba(107, 201, 198, 0.55), 0 0 44px rgba(107, 201, 198, 0.22);
-            --vv-glow-soft: 0 10px 28px -8px rgba(107, 201, 198, 0.35), 0 0 18px rgba(107, 201, 198, 0.16);
-
-            --vv-radius: 1.15rem;
-            --vv-shadow: 0 12px 28px -14px rgba(0, 0, 0, 0.75);
+            --vv-glow: 0 0 18px rgba(107, 201, 198, 0.35);
+            --vv-radius: 1rem;
+            --vv-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.7);
             color: var(--vv-text);
             width: 100%;
         }
@@ -195,19 +187,17 @@
             --vv-card: #ffffff;
             --vv-card-elev: #f1f5f9;
             --vv-border: rgba(15, 23, 42, 0.09);
-            --vv-border-hover: rgba(107, 201, 198, 0.6);
             --vv-text: #0f172a;
             --vv-muted: #64748b;
-            --vv-shadow: 0 10px 26px -16px rgba(15, 23, 42, 0.2);
+            --vv-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.16);
         }
 
-        /* ---------- Separador de sección ---------- */
         .vv-sec-label {
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            margin: 0 0 0.9rem;
-            font-size: 0.95rem;
+            margin: 0 0 0.85rem;
+            font-size: 0.9rem;
             font-weight: 800;
             letter-spacing: 0.09em;
             text-transform: uppercase;
@@ -218,27 +208,26 @@
             content: "";
             flex: 1;
             height: 1px;
-            background: linear-gradient(90deg, rgba(107, 201, 198, 0.35), var(--vv-border));
+            background: var(--vv-border);
         }
 
-        /* ---------- Cabecera Principal Protagonista ---------- */
         .vv-topbar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
-            gap: 1.25rem;
-            margin-bottom: 1.75rem;
+            gap: 1.1rem;
+            margin-bottom: 1.6rem;
         }
 
         .vv-hero-ico {
-            width: 4.35rem;
-            height: 4.35rem;
-            border-radius: 1.15rem;
+            width: 4rem;
+            height: 4rem;
+            border-radius: 1rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.2rem;
+            font-size: 2rem;
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
             box-shadow: var(--vv-glow);
@@ -247,114 +236,95 @@
 
         .vv-title {
             margin: 0;
-            font-size: 2.6rem;
+            font-size: 2.45rem;
             font-weight: 800;
             letter-spacing: -0.025em;
             line-height: 1.12;
             color: var(--vv-text);
-            text-shadow: 0 0 28px rgba(107, 201, 198, 0.18);
         }
 
         .vv-controls {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.7rem;
+            gap: 0.65rem;
         }
 
         .vv-quick-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.55rem;
-            padding: 0.65rem 1.2rem;
-            border-radius: 0.85rem;
-            font-size: 1.02rem;
-            font-weight: 800;
+            gap: 0.5rem;
+            padding: 0.6rem 1.15rem;
+            border-radius: 0.8rem;
+            font-size: 0.98rem;
+            font-weight: 700;
             text-decoration: none;
-            transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
             white-space: nowrap;
         }
 
         .vv-quick-btn--primary {
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
-            box-shadow: 0 0 20px rgba(107, 201, 198, 0.5);
         }
 
         .vv-quick-btn--primary:hover {
-            transform: translateY(-2px);
+            transform: translateY(-1px);
             box-shadow: var(--vv-glow);
             color: var(--vv-navy-deep);
         }
 
         .vv-quick-btn--secondary {
-            background: var(--vv-navy);
-            color: var(--vv-cream);
-            border: 1px solid rgba(107, 201, 198, 0.55);
-            box-shadow: 0 0 14px rgba(107, 201, 198, 0.22);
+            background: var(--vv-card);
+            color: var(--vv-text);
+            border: 1px solid var(--vv-border);
         }
 
         .vv-quick-btn--secondary:hover {
-            transform: translateY(-2px);
-            border-color: var(--vv-mint-bright);
-            box-shadow: var(--vv-glow-soft);
-            color: var(--vv-cream);
+            transform: translateY(-1px);
+            border-color: var(--vv-mint);
+            color: var(--vv-text);
         }
 
         .vv-pill-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.55rem;
-            padding: 0.62rem 1.1rem;
-            font-size: 1rem;
+            gap: 0.5rem;
+            padding: 0.58rem 1rem;
+            font-size: 0.96rem;
             font-weight: 600;
             color: var(--vv-text);
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
-            border-radius: 0.85rem;
-            box-shadow: 0 0 16px rgba(107, 201, 198, 0.1);
+            border-radius: 0.8rem;
         }
 
-        .vv-segmented {
+        .vv-refresh-btn {
             display: inline-flex;
             align-items: center;
-            padding: 0.28rem;
-            background: var(--vv-card);
+            gap: 0.4rem;
+            padding: 0.58rem 1rem;
+            border-radius: 0.8rem;
             border: 1px solid var(--vv-border);
-            border-radius: 0.9rem;
-            gap: 0.25rem;
-        }
-
-        .vv-seg-btn {
-            border: 0;
-            background: transparent;
-            color: var(--vv-muted);
-            font-size: 0.98rem;
+            background: var(--vv-card-elev);
+            color: var(--vv-text);
+            font-size: 0.96rem;
             font-weight: 600;
-            padding: 0.48rem 1rem;
-            border-radius: 0.7rem;
-            transition: all 0.16s ease;
             cursor: pointer;
+            transition: border-color 0.15s ease, color 0.15s ease;
         }
 
-        .vv-seg-btn:hover {
+        .vv-refresh-btn:hover {
+            border-color: var(--vv-mint);
             color: var(--vv-mint-bright);
         }
 
-        .vv-seg-btn.is-active {
-            background: var(--vv-navy);
-            color: var(--vv-cream);
-            font-weight: 700;
-            border: 1px solid rgba(107, 201, 198, 0.45);
-            box-shadow: 0 0 16px rgba(107, 201, 198, 0.28);
-        }
-
-        /* ---------- Fila 1: KPIs compactos ---------- */
+        /* KPIs */
         .vv-kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-            gap: 1.05rem;
-            margin-bottom: 1.7rem;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.8rem;
         }
 
         .vv-kpi-card {
@@ -364,16 +334,16 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            gap: 0.75rem;
-            padding: 1.15rem 1.35rem;
+            gap: 0.7rem;
+            padding: 1.1rem 1.3rem;
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow), 0 0 20px -10px rgba(107, 201, 198, 0.22);
+            box-shadow: var(--vv-shadow);
             text-decoration: none;
             color: var(--vv-text);
             overflow: hidden;
-            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+            transition: transform 0.16s ease, border-color 0.16s ease;
         }
 
         .vv-kpi-card::before {
@@ -382,16 +352,13 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 3.5px;
+            height: 3px;
             background: var(--k-color);
-            box-shadow: 0 2px 16px rgba(107, 201, 198, 0.65);
         }
 
         a.vv-kpi-card:hover {
             transform: translateY(-2px);
-            border-color: var(--vv-mint);
-            background: var(--vv-card-elev);
-            box-shadow: var(--vv-glow-soft);
+            border-color: rgba(107, 201, 198, 0.4);
             color: var(--vv-text);
         }
 
@@ -408,23 +375,21 @@
         }
 
         .vv-kpi-label {
-            font-size: 1.05rem;
+            font-size: 1rem;
             font-weight: 600;
             color: var(--vv-muted);
-            line-height: 1.25;
         }
 
         .vv-kpi-ico {
-            width: 2.65rem;
-            height: 2.65rem;
-            border-radius: 0.78rem;
+            width: 2.45rem;
+            height: 2.45rem;
+            border-radius: 0.7rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             background: var(--k-color);
             color: var(--k-ink);
-            box-shadow: 0 0 18px rgba(107, 201, 198, 0.42);
             flex-shrink: 0;
         }
 
@@ -436,32 +401,27 @@
         }
 
         .vv-kpi-value {
-            font-size: 2rem;
+            font-size: 1.9rem;
             font-weight: 800;
             line-height: 1.08;
-            letter-spacing: -0.02em;
             font-variant-numeric: tabular-nums;
-            color: var(--vv-text);
-            white-space: nowrap;
         }
 
         .vv-kpi-go {
-            font-size: 0.98rem;
+            font-size: 0.94rem;
             font-weight: 700;
             color: var(--vv-mint);
-            text-shadow: 0 0 12px rgba(107, 201, 198, 0.45);
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
-            white-space: nowrap;
+            gap: 0.25rem;
         }
 
-        /* ---------- Fila 2: Flujo Clínico Cronológico ---------- */
+        /* Flujo operativo */
         .vv-gestor-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-            gap: 1.15rem;
-            margin-bottom: 1.9rem;
+            grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+            gap: 0.95rem;
+            margin-bottom: 1.8rem;
         }
 
         .vv-gestor-card {
@@ -470,14 +430,14 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 1.45rem 1.55rem;
+            padding: 1.15rem 1.25rem;
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow), 0 0 20px -10px rgba(107, 201, 198, 0.2);
+            box-shadow: var(--vv-shadow);
             text-decoration: none;
             color: var(--vv-text);
-            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+            transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
         }
 
         .vv-gestor-card:nth-child(1) { --g-color: var(--vv-mint); }
@@ -489,157 +449,125 @@
         .vv-gestor-card:nth-child(7) { --g-color: var(--vv-cream); }
 
         .vv-gestor-card:hover {
-            transform: translateY(-3px);
-            border-color: var(--vv-mint);
+            transform: translateY(-2px);
+            border-color: rgba(107, 201, 198, 0.45);
             background: var(--vv-card-elev);
-            box-shadow: var(--vv-glow-soft);
             color: var(--vv-text);
         }
 
         .vv-gestor-card.is-featured {
             background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
-            border-color: var(--vv-mint);
-            box-shadow: 0 12px 32px -10px rgba(107, 201, 198, 0.45), 0 0 22px rgba(107, 201, 198, 0.22), inset 0 1px 0 rgba(107, 201, 198, 0.45);
+            border-color: rgba(107, 201, 198, 0.65);
             color: var(--vv-cream);
         }
 
-        .vv-gestor-card.is-featured .vv-gestor-title {
-            color: var(--vv-cream);
-        }
+        .vv-gestor-card.is-featured .vv-gestor-title { color: var(--vv-cream); }
+        .vv-gestor-card.is-featured .vv-gestor-desc { color: var(--vv-sage); }
+        .vv-gestor-card.is-featured .vv-gestor-num { color: var(--vv-mint-bright); opacity: 0.85; }
 
-        .vv-gestor-card.is-featured .vv-gestor-desc {
-            color: var(--vv-sage);
-        }
-
-        .vv-gestor-card.is-featured .vv-gestor-num {
-            color: var(--vv-mint-bright);
-            opacity: 0.8;
-        }
-
-        /* Cuando el rol tiene 1 solo gestor: tarjeta ancha destacada */
         .vv-gestor-banner {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
             gap: 1.5rem 2rem;
-            padding: 1.75rem 2rem;
+            padding: 1.5rem 1.75rem;
             background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
-            border: 1.5px solid var(--vv-mint);
+            border: 1px solid rgba(107, 201, 198, 0.6);
             border-radius: var(--vv-radius);
-            box-shadow: 0 14px 36px -10px rgba(107, 201, 198, 0.5), 0 0 26px rgba(107, 201, 198, 0.25);
             text-decoration: none;
             color: var(--vv-cream);
-            margin-bottom: 1.9rem;
-            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-        }
-
-        .vv-gestor-banner:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 16px 42px -8px rgba(107, 201, 198, 0.65), 0 0 32px rgba(107, 201, 198, 0.35);
-            filter: brightness(1.06);
-            color: var(--vv-cream);
+            margin-bottom: 1.8rem;
         }
 
         .vv-gestor-banner__ico {
-            width: 3.9rem;
-            height: 3.9rem;
-            border-radius: 1rem;
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 0.9rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.85rem;
+            font-size: 1.65rem;
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
-            box-shadow: var(--vv-glow);
-            flex-shrink: 0;
         }
 
         .vv-gestor-banner__stat {
-            padding: 0 1.65rem;
-            border-left: 1px solid rgba(107, 201, 198, 0.4);
+            padding: 0 1.5rem;
+            border-left: 1px solid rgba(107, 201, 198, 0.35);
             text-align: right;
         }
 
         .vv-gestor-banner__btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.8rem 1.45rem;
-            border-radius: 0.8rem;
+            gap: 0.45rem;
+            padding: 0.72rem 1.3rem;
+            border-radius: 0.75rem;
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
-            box-shadow: 0 0 22px rgba(107, 201, 198, 0.6);
             font-weight: 800;
-            font-size: 1.05rem;
         }
 
         .vv-gestor-top {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .vv-gestor-num {
-            font-size: 1.55rem;
+            font-size: 1.25rem;
             font-weight: 800;
             color: var(--vv-muted);
-            opacity: 0.55;
+            opacity: 0.6;
             font-variant-numeric: tabular-nums;
         }
 
         .vv-gestor-ico {
-            width: 3.1rem;
-            height: 3.1rem;
-            border-radius: 0.85rem;
+            width: 2.65rem;
+            height: 2.65rem;
+            border-radius: 0.72rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.48rem;
+            font-size: 1.25rem;
             background: var(--g-color);
             color: var(--g-ink);
-            box-shadow: 0 0 20px rgba(107, 201, 198, 0.45);
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .vv-gestor-card:hover .vv-gestor-ico {
-            transform: scale(1.08);
-            box-shadow: var(--vv-glow);
         }
 
         .vv-gestor-title {
-            font-size: 1.28rem;
+            font-size: 1.15rem;
             font-weight: 700;
-            margin: 0 0 0.35rem;
+            margin: 0 0 0.25rem;
             color: var(--vv-text);
         }
 
         .vv-gestor-desc {
-            font-size: 1.02rem;
+            font-size: 0.94rem;
             color: var(--vv-muted);
-            line-height: 1.4;
-            margin: 0 0 1.15rem;
+            line-height: 1.35;
+            margin: 0 0 0.9rem;
         }
 
         .vv-gestor-cta {
             display: inline-flex;
             align-items: center;
-            gap: 0.45rem;
-            font-size: 1.02rem;
+            gap: 0.4rem;
+            font-size: 0.94rem;
             font-weight: 700;
             color: var(--vv-mint);
-            text-shadow: 0 0 12px rgba(107, 201, 198, 0.4);
             margin-top: auto;
         }
 
-        /* ---------- Tarjeta Contenedora Base (Tabla y Lateral) ---------- */
+        /* Tarjeta base y tabla */
         .vv-card {
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow), 0 0 26px -12px rgba(107, 201, 198, 0.22);
+            box-shadow: var(--vv-shadow);
             overflow: hidden;
+            margin-bottom: 1.8rem;
         }
 
         .vv-card-head {
@@ -648,91 +576,77 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.85rem;
-            padding: 1.3rem 1.6rem;
+            padding: 1.15rem 1.45rem;
             border-bottom: 1px solid var(--vv-border);
         }
 
         .vv-card-title {
-            margin: 0 0 0.15rem;
-            font-size: 1.32rem;
+            margin: 0 0 0.1rem;
+            font-size: 1.25rem;
             font-weight: 700;
             color: var(--vv-text);
         }
 
-        /* ---------- Tabla Cola de Trabajo ---------- */
         .vv-table {
             width: 100%;
             margin: 0;
-            font-size: 1.12rem;
+            font-size: 1.05rem;
             color: var(--vv-text);
             border-collapse: collapse;
         }
 
         .vv-table th {
-            font-size: 0.9rem;
+            font-size: 0.84rem;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             color: var(--vv-muted);
             background: var(--vv-card-elev);
-            padding: 1.05rem 1.35rem;
+            padding: 0.95rem 1.25rem;
             border-bottom: 1px solid var(--vv-border);
             white-space: nowrap;
         }
 
         .vv-table td {
-            font-size: 1.12rem;
-            padding: 1.12rem 1.35rem;
+            padding: 1rem 1.25rem;
             border-bottom: 1px solid var(--vv-border);
             vertical-align: middle;
         }
 
-        .vv-table tbody tr:last-child td {
-            border-bottom: 0;
-        }
-
-        .vv-table tbody tr:hover {
-            background: rgba(107, 201, 198, 0.08);
-        }
-
-        .vv-table tbody tr.is-urgent {
-            background: rgba(40, 51, 79, 0.55);
-        }
-
-        .vv-table tbody tr.is-urgent td:first-child {
-            box-shadow: inset 4px 0 0 var(--vv-mint);
-        }
+        .vv-table tbody tr:last-child td { border-bottom: 0; }
+        .vv-table tbody tr:hover { background: rgba(107, 201, 198, 0.06); }
+        .vv-table tbody tr.is-urgent { background: rgba(40, 51, 79, 0.45); }
+        .vv-table tbody tr.is-urgent td:first-child { box-shadow: inset 4px 0 0 var(--vv-mint); }
 
         .vv-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
-            padding: 0.36rem 0.88rem;
+            gap: 0.35rem;
+            padding: 0.32rem 0.8rem;
             border-radius: 999px;
-            font-size: 0.92rem;
+            font-size: 0.88rem;
             font-weight: 700;
             white-space: nowrap;
         }
 
-        .vv-badge--primary   { background: var(--vv-blue);  color: var(--vv-navy-deep); box-shadow: 0 0 12px rgba(130, 151, 209, 0.35); }
-        .vv-badge--success   { background: var(--vv-mint);  color: var(--vv-navy-deep); box-shadow: 0 0 14px rgba(107, 201, 198, 0.5); }
+        .vv-badge--primary   { background: var(--vv-blue);  color: var(--vv-navy-deep); }
+        .vv-badge--success   { background: var(--vv-mint);  color: var(--vv-navy-deep); }
         .vv-badge--warning   { background: var(--vv-cream); color: var(--vv-navy-deep); }
         .vv-badge--info      { background: var(--vv-sage);  color: var(--vv-navy-deep); }
         .vv-badge--secondary { background: var(--vv-navy);  color: var(--vv-cream); border: 1px solid var(--vv-sage); }
-        .vv-badge--urgent    { background: var(--vv-cream); color: var(--vv-navy-deep); border: 1.5px solid var(--vv-mint); font-weight: 800; box-shadow: 0 0 12px rgba(107, 201, 198, 0.35); }
+        .vv-badge--urgent    { background: var(--vv-cream); color: var(--vv-navy-deep); border: 1px solid var(--vv-mint); font-weight: 800; }
 
         .vv-action-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.45rem;
-            padding: 0.52rem 1.08rem;
-            border-radius: 0.68rem;
-            font-size: 0.98rem;
+            gap: 0.4rem;
+            padding: 0.48rem 1rem;
+            border-radius: 0.65rem;
+            font-size: 0.94rem;
             font-weight: 700;
             color: var(--vv-cream);
             background: var(--vv-navy);
-            border: 1px solid rgba(107, 201, 198, 0.55);
-            box-shadow: 0 0 14px rgba(107, 201, 198, 0.2);
+            border: 1px solid rgba(107, 201, 198, 0.45);
             text-decoration: none;
             transition: all 0.15s ease;
             white-space: nowrap;
@@ -741,57 +655,55 @@
         .vv-action-btn:hover {
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             border-color: var(--vv-mint-bright);
-            box-shadow: var(--vv-glow);
             color: var(--vv-navy-deep);
         }
 
-        /* ---------- Lateral: Urgentes y Reportes ---------- */
-        .vv-side-list {
-            padding: 1rem 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
+        /* Reportes en grilla inferior */
+        .vv-reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 0.95rem;
         }
 
-        .vv-side-item {
+        .vv-report-link {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 0.9rem;
-            padding: 0.95rem 1.15rem;
+            padding: 1rem 1.2rem;
             border-radius: 0.85rem;
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--vv-card);
             border: 1px solid var(--vv-border);
+            box-shadow: var(--vv-shadow);
             text-decoration: none;
             color: var(--vv-text);
-            transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+            transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
         }
 
-        a.vv-side-item:hover {
-            background: var(--vv-navy);
-            border-color: var(--vv-mint);
-            box-shadow: var(--vv-glow-soft);
-            color: var(--vv-cream);
+        .vv-report-link:hover {
+            transform: translateY(-2px);
+            border-color: rgba(107, 201, 198, 0.5);
+            background: var(--vv-card-elev);
+            color: var(--vv-text);
         }
 
         .vv-rep-ico {
-            width: 2.75rem;
-            height: 2.75rem;
-            border-radius: 0.75rem;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.7rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.22rem;
+            font-size: 1.15rem;
             background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
-            box-shadow: 0 0 18px rgba(107, 201, 198, 0.55);
             flex-shrink: 0;
         }
     </style>
 
     <div class="vv-dash">
 
-        {{-- ============ ENCABEZADO PRINCIPAL PROTAGONISTA ============ --}}
+        {{-- ============ CABECERA ============ --}}
         <div class="vv-topbar">
             <div class="d-flex align-items-center gap-3">
                 <span class="vv-hero-ico">
@@ -829,16 +741,19 @@
                     </span>
                 @endif
 
-                <div class="vv-segmented">
-                    <span class="vv-seg-btn is-active">{{ $today }}</span>
-                    <button type="button" class="vv-seg-btn" onclick="location.reload()" title="Actualizar datos">
-                        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
-                    </button>
-                </div>
+                <span class="vv-pill-badge">
+                    <i class="bi bi-calendar3" style="color: var(--vv-mint);"></i>
+                    {{ $today }}
+                </span>
+
+                <button type="button" class="vv-refresh-btn" onclick="location.reload()" title="Actualizar datos">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    Actualizar
+                </button>
             </div>
         </div>
 
-        {{-- ============ BLOQUE 1: INDICADORES CLAVE COMPACTOS ============ --}}
+        {{-- ============ 1. RESUMEN DEL TURNO ============ --}}
         @if($kpis->isNotEmpty())
             <h2 class="vv-sec-label">Resumen del turno</h2>
             <div class="vv-kpi-grid">
@@ -868,7 +783,82 @@
             </div>
         @endif
 
-        {{-- ============ BLOQUE 2: FLUJO CLÍNICO Y OPERATIVO ============ --}}
+        {{-- ============ 2. COLA DE TRABAJO (ANCHO COMPLETO) ============ --}}
+        <h2 class="vv-sec-label">Cola de trabajo</h2>
+        <section class="vv-card">
+            <div class="vv-card-head">
+                <div>
+                    <h3 class="vv-card-title">{{ $queueTitle }}</h3>
+                    <span style="font-size: 0.95rem; color: var(--vv-muted);">Ordenado por prioridad clínica y hora</span>
+                </div>
+                <span class="vv-pill-badge">{{ $queue->count() }} registros</span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="vv-table">
+                    <thead>
+                        <tr>
+                            <th>Orden</th>
+                            <th>Paciente</th>
+                            <th>Examen</th>
+                            <th>Hora</th>
+                            <th>Estado</th>
+                            <th class="text-end">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($queue->take(8) as $row)
+                            @php
+                                $estado = strtoupper((string) ($row['estado'] ?? ''));
+                                $horaCita = $row['hora_cita'] ?? null;
+                                $horaLabel = filled($horaCita)
+                                    ? str_pad((string) $horaCita, 2, '0', STR_PAD_LEFT) . ':00'
+                                    : (filled($row['hora'] ?? null) ? $row['hora'] : 'Sin hora');
+                                $rowUrl = $row['url']
+                                    ?? (\Illuminate\Support\Facades\Route::has('ordenes.show')
+                                        ? route('ordenes.show', $row['id'])
+                                        : ($find(['orden']) ? $find(['orden']) . '?orden=' . urlencode($row['id'] ?? $row['orden']) : null));
+                            @endphp
+                            <tr class="{{ ! empty($row['urgente']) ? 'is-urgent' : '' }}">
+                                <td class="fw-bold text-nowrap" style="font-variant-numeric: tabular-nums;">{{ $row['orden'] }}</td>
+                                <td>{{ $row['paciente'] }}</td>
+                                <td>
+                                    <div class="d-inline-flex flex-wrap align-items-center gap-2">
+                                        <span>{{ $row['examen'] }}</span>
+                                        @if(! empty($row['urgente']))
+                                            <span class="vv-badge vv-badge--urgent">
+                                                <i class="bi bi-exclamation-triangle-fill"></i> Urgente
+                                            </span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td style="color: var(--vv-muted); font-variant-numeric: tabular-nums;">{{ $horaLabel }}</td>
+                                <td>
+                                    <span class="vv-badge vv-badge--{{ $badge[$estado] ?? 'secondary' }}">
+                                        {{ \Illuminate\Support\Str::title(str_replace('_', ' ', strtolower($estado))) }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    @if($rowUrl)
+                                        <a href="{{ $rowUrl }}" class="vv-action-btn">
+                                            {{ $rowLabel }} <i class="bi bi-arrow-right"></i>
+                                        </a>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center py-5" style="color: var(--vv-muted); font-size: 1.1rem;">
+                                    No hay elementos pendientes en la cola.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {{-- ============ 3. FLUJO OPERATIVO ============ --}}
         <h2 class="vv-sec-label">Flujo operativo</h2>
         @if($actionCnt === 1)
             @php $single = $actions->first(); @endphp
@@ -878,15 +868,15 @@
                         <i class="bi {{ $single['def'][1] }}"></i>
                     </span>
                     <div>
-                        <div style="font-size: 1.6rem; font-weight: 800; line-height: 1.2;">{{ $single['def'][0] }}</div>
-                        <div style="opacity: 0.9; font-size: 1.08rem;">{{ $single['def'][2] }}</div>
+                        <div style="font-size: 1.45rem; font-weight: 800; line-height: 1.2;">{{ $single['def'][0] }}</div>
+                        <div style="opacity: 0.9; font-size: 1.02rem;">{{ $single['def'][2] }}</div>
                     </div>
                 </div>
 
                 <div class="d-flex align-items-center gap-4 ms-auto">
                     <div class="vv-gestor-banner__stat d-none d-sm-block">
-                        <div style="font-size: 0.94rem; opacity: 0.88;">{{ $primaryKpi['label'] }}</div>
-                        <div style="font-size: 2.15rem; font-weight: 800; line-height: 1.05;">{{ $primaryKpi['value'] }}</div>
+                        <div style="font-size: 0.9rem; opacity: 0.85;">{{ $primaryKpi['label'] }}</div>
+                        <div style="font-size: 1.95rem; font-weight: 800; line-height: 1.05;">{{ $primaryKpi['value'] }}</div>
                     </div>
                     <span class="vv-gestor-banner__btn">
                         Abrir módulo <i class="bi bi-arrow-right"></i>
@@ -918,138 +908,27 @@
                 @forelse($nav as $m)
                     <a class="vv-action-btn" href="{{ $m['url'] }}">{{ $m['label'] }}</a>
                 @empty
-                    <span style="color: var(--vv-muted); font-size: 1.1rem;">Tu perfil no tiene módulos habilitados.</span>
+                    <span style="color: var(--vv-muted); font-size: 1.05rem;">Tu perfil no tiene módulos habilitados.</span>
                 @endforelse
             </div>
         @endif
 
-        {{-- ============ BLOQUE 3: COLA DE TRABAJO + URGENTES / REPORTES ============ --}}
-        <div class="row g-4">
-            <div class="{{ $mainCol }}">
-                <h2 class="vv-sec-label">Cola de trabajo</h2>
-                <section class="vv-card">
-                    <div class="vv-card-head">
-                        <div>
-                            <h3 class="vv-card-title">{{ $queueTitle }}</h3>
-                            <span style="font-size: 0.98rem; color: var(--vv-muted);">Ordenado por prioridad clínica y hora</span>
-                        </div>
-                        <span class="vv-pill-badge">{{ $queue->count() }} registros</span>
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="vv-table">
-                            <thead>
-                                <tr>
-                                    <th>Orden</th>
-                                    <th>Paciente</th>
-                                    <th>Examen</th>
-                                    <th>Hora</th>
-                                    <th>Estado</th>
-                                    <th class="text-end">Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse($queue->take(8) as $row)
-                                    @php
-                                        $estado = strtoupper((string) ($row['estado'] ?? ''));
-                                        $rowUrl = $row['url']
-                                            ?? (\Illuminate\Support\Facades\Route::has('ordenes.show')
-                                                ? route('ordenes.show', $row['id'])
-                                                : ($find(['orden']) ? $find(['orden']) . '?orden=' . urlencode($row['id'] ?? $row['orden']) : null));
-                                    @endphp
-                                    <tr class="{{ ! empty($row['urgente']) ? 'is-urgent' : '' }}">
-                                        <td class="fw-bold text-nowrap" style="font-variant-numeric: tabular-nums;">{{ $row['orden'] }}</td>
-                                        <td>{{ $row['paciente'] }}</td>
-                                        <td>
-                                            <div class="d-inline-flex flex-wrap align-items-center gap-2">
-                                                <span>{{ $row['examen'] }}</span>
-                                                @if(! empty($row['urgente']))
-                                                    <span class="vv-badge vv-badge--urgent">
-                                                        <i class="bi bi-exclamation-triangle-fill"></i> Urgente
-                                                    </span>
-                                                @endif
-                                            </div>
-                                        </td>
-                                        <td style="color: var(--vv-muted); font-variant-numeric: tabular-nums;">{{ $row['hora'] ?? '—' }}</td>
-                                        <td>
-                                            <span class="vv-badge vv-badge--{{ $badge[$estado] ?? 'secondary' }}">
-                                                {{ \Illuminate\Support\Str::title(str_replace('_', ' ', strtolower($estado))) }}
-                                            </span>
-                                        </td>
-                                        <td class="text-end">
-                                            @if($rowUrl)
-                                                <a href="{{ $rowUrl }}" class="vv-action-btn">
-                                                    {{ $rowLabel }} <i class="bi bi-arrow-right"></i>
-                                                </a>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="6" class="text-center py-5" style="color: var(--vv-muted); font-size: 1.15rem;">
-                                            No hay elementos pendientes en la cola.
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+        {{-- ============ 4. REPORTES DEL SISTEMA ============ --}}
+        @if($reports->isNotEmpty())
+            <h2 class="vv-sec-label">Reportes del sistema</h2>
+            <div class="vv-reports-grid">
+                @foreach($reports as $r)
+                    <a href="{{ $r['url'] }}" class="vv-report-link">
+                        <span class="d-inline-flex align-items-center gap-3">
+                            <span class="vv-rep-ico">
+                                <i class="bi {{ $r['def'][1] }}"></i>
+                            </span>
+                            <span class="fw-semibold" style="font-size: 1.04rem;">{{ $r['def'][0] }}</span>
+                        </span>
+                        <i class="bi bi-chevron-right" style="color: var(--vv-muted);"></i>
+                    </a>
+                @endforeach
             </div>
-
-            @if($hasSide)
-                <div class="col-xl-4">
-                    <div class="d-flex flex-column gap-4">
-                        @if($urgentes->isNotEmpty())
-                            <div>
-                                <h2 class="vv-sec-label">Prioridad alta</h2>
-                                <section class="vv-card">
-                                    <div class="vv-card-head">
-                                        <h3 class="vv-card-title">Exámenes urgentes</h3>
-                                        <span class="vv-badge vv-badge--urgent">{{ $urgentes->count() }}</span>
-                                    </div>
-                                    <div class="vv-side-list">
-                                        @foreach($urgentes->take(4) as $u)
-                                            <div class="vv-side-item">
-                                                <div class="min-w-0">
-                                                    <div class="fw-bold" style="font-size: 1.1rem;">{{ $u['orden'] }}</div>
-                                                    <div class="text-truncate" style="font-size: 0.96rem; color: var(--vv-muted);">{{ $u['examen'] }}</div>
-                                                </div>
-                                                <span class="vv-badge vv-badge--urgent">Urgente</span>
-                                            </div>
-                                        @endforeach
-                                    </div>
-                                </section>
-                            </div>
-                        @endif
-
-                        @if($reports->isNotEmpty())
-                            <div>
-                                <h2 class="vv-sec-label">Analítica</h2>
-                                <section class="vv-card">
-                                    <div class="vv-card-head">
-                                        <h3 class="vv-card-title">Reportes del sistema</h3>
-                                        <i class="bi bi-bar-chart-line fs-5" style="color: var(--vv-muted);"></i>
-                                    </div>
-                                    <div class="vv-side-list">
-                                        @foreach($reports as $r)
-                                            <a href="{{ $r['url'] }}" class="vv-side-item">
-                                                <span class="d-inline-flex align-items-center gap-3">
-                                                    <span class="vv-rep-ico">
-                                                        <i class="bi {{ $r['def'][1] }}"></i>
-                                                    </span>
-                                                    <span class="fw-semibold" style="font-size: 1.08rem;">{{ $r['def'][0] }}</span>
-                                                </span>
-                                                <i class="bi bi-chevron-right" style="color: var(--vv-muted); font-size: 1.05rem;"></i>
-                                            </a>
-                                        @endforeach
-                                    </div>
-                                </section>
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            @endif
-        </div>
+        @endif
     </div>
 @endsection

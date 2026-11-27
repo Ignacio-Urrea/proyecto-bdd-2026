@@ -14,7 +14,7 @@ class ReportController extends Controller
             'CORREO_SUCURSAL' => 'Correo',
             'ESTADO' => 'Estado',
             'TOTAL_ORDENES' => 'Órdenes',
-        ]);
+        ], 'ordenes');
     }
 
     public function revenue(): View
@@ -32,14 +32,15 @@ class ReportController extends Controller
             'URGENCIA' => 'Urgencia',
             'ESTADO' => 'Estado',
             'TOTAL_EXAMENES' => 'Exámenes',
-        ]);
+        ], 'examenes');
     }
 
-    private function show(string $title, string $procedure, array $columns): View
+    private function show(string $title, string $procedure, array $columns, ?string $statusContext = null): View
     {
         return view('reportes.index', [
             'title' => $title,
             'columns' => $columns,
+            'statusLabels' => $statusContext ? config('imaj.status_labels.'.$statusContext, []) : [],
             'rows' => app(OracleCrudService::class)->report($procedure),
         ]);
     }

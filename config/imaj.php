@@ -35,6 +35,24 @@ return [
         'reporte-ingresos' => ['SUPERADMIN', 'ADMINISTRADOR', 'CLINICA_ADMIN', 'SUCURSAL_ADMIN', 'FINANZAS'],
         'reporte-examenes' => ['SUPERADMIN', 'ADMINISTRADOR', 'CLINICA_ADMIN', 'SUCURSAL_ADMIN', 'TECNICO', 'RADIOLOGO'],
     ],
+    'status_labels' => [
+        'ordenes' => [
+            0 => 'Agendada',
+            1 => 'Pendiente',
+            2 => 'En proceso',
+            3 => 'Ejecutada',
+        ],
+        'examenes' => [
+            0 => 'Sin iniciar',
+            1 => 'Pendiente',
+            2 => 'En proceso',
+            3 => 'Ejecutada',
+        ],
+        'presupuestos' => [
+            0 => 'Pendiente de pago',
+            1 => 'Pagado',
+        ],
+    ],
     'modules' => [
         ['label' => 'Roles', 'route' => 'roles'],
         ['label' => 'Regiones', 'route' => 'regiones'],

@@ -2,6 +2,8 @@
     $title     = $title ?? 'Listado';
     $routeName = $routeName ?? '';
     $rows      = $records ?? $rows ?? $items ?? collect();
+    $dateFrom  = $dateFrom ?? '';
+    $dateTo    = $dateTo ?? '';
     $rawCols   = $columns ?? [];
 
     /* Normaliza $columns tanto si viene como ['COL' => 'Label'] o [['name'/'key' => ..., 'label' => ...]] */
@@ -25,6 +27,8 @@
         }
     }
 
+    $hasDateFilter = in_array($routeName, ['ordenes', 'examenes'], true);
+    $statusLabels = config('imaj.status_labels.'.$routeName, []);
     $hasCreate  = $routeName && \Illuminate\Support\Facades\Route::has($routeName . '.create');
     $hasShow    = $routeName && \Illuminate\Support\Facades\Route::has($routeName . '.show');
     $hasEdit    = $routeName && \Illuminate\Support\Facades\Route::has($routeName . '.edit');
@@ -465,6 +469,20 @@
                     <input type="text" placeholder="Filtrar registros en pantalla..." data-vv-table-search>
                 </div>
 
+                @if($hasDateFilter)
+                    <form method="GET" action="{{ route($routeName . '.index') }}" class="d-flex flex-wrap gap-2 align-items-center">
+                        <label for="fechaDesde" class="small text-secondary mb-0">Desde:</label>
+                        <input type="date" id="fechaDesde" name="desde" value="{{ $dateFrom }}" class="form-control form-control-sm" style="width: auto;">
+
+                        <label for="fechaHasta" class="small text-secondary mb-0">Hasta:</label>
+                        <input type="date" id="fechaHasta" name="hasta" value="{{ $dateTo }}" class="form-control form-control-sm" style="width: auto;">
+
+                        <button type="submit" name="hoy" value="1" class="btn btn-sm btn-outline-info">Hoy</button>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Filtrar</button>
+                        <a href="{{ route($routeName . '.index') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+                    </form>
+                @endif
+
                 <span class="vv-count-badge">
                     <i class="bi bi-layers"></i>
                     <span data-vv-visible-count>{{ $totalRows }}</span>
@@ -490,7 +508,13 @@
                                 $rowId = data_get($row, 'ID') ?? data_get($row, 'id');
                                 $rowSearchBlob = '';
                                 foreach ($normalizedCols as $cKey => $cLabel) {
-                                    $rowSearchBlob .= ' ' . (string) data_get($row, $cKey, '');
+                                    $searchValue = data_get($row, $cKey, '');
+                                    $rowSearchBlob .= ' ' . (string) $searchValue;
+                                    if (strtoupper((string) $cKey) === 'ESTADO' && $searchValue !== '') {
+                                        $rowSearchBlob .= ' ' . (string) ($statusLabels[(string) $searchValue] ?? '');
+                                    } elseif (strtoupper((string) $cKey) === 'EJECUTADA' && in_array((string) $searchValue, ['0', '1'], true)) {
+                                        $rowSearchBlob .= ' ' . ((string) $searchValue === '1' ? 'Sí' : 'No');
+                                    }
                                 }
                             @endphp
                             <tr data-vv-row data-search="{{ mb_strtolower(trim($rowSearchBlob)) }}">
@@ -498,12 +522,18 @@
                                     @php
                                         $cellVal = data_get($row, $colKey);
                                         $isIdCol = strtoupper((string) $colKey) === 'ID';
+                                        $normalizedColKey = strtoupper((string) $colKey);
+                                        $displayVal = match (true) {
+                                            $normalizedColKey === 'ESTADO' && $cellVal !== null => $statusLabels[(string) $cellVal] ?? $cellVal,
+                                            $normalizedColKey === 'EJECUTADA' && in_array((string) $cellVal, ['0', '1'], true) => (string) $cellVal === '1' ? 'Sí' : 'No',
+                                            default => $cellVal,
+                                        };
                                     @endphp
                                     <td>
                                         @if($isIdCol)
                                             <span class="vv-id-chip">#{{ $cellVal }}</span>
                                         @else
-                                            {{ $cellVal ?? '—' }}
+                                            {{ $displayVal ?? '—' }}
                                         @endif
                                     </td>
                                 @endforeach
