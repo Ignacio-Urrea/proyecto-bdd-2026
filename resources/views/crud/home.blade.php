@@ -41,27 +41,39 @@
             }
             return null;
         };
-        $go = fn (string $k) => str_starts_with($k, 'rep:') ? $find(['reporte', substr($k, 4)]) : $find(['gestor', $k]);
 
-        /* ============ 3) QUÉ VE CADA ROL ============ */
+        // Busca primero "Gestor: <k>" y, si es un módulo directo (ej. Pacientes o Imágenes), cae al módulo base
+        $go = function (string $k) use ($find) {
+            if (str_starts_with($k, 'rep:')) {
+                return $find(['reporte', substr($k, 4)]);
+            }
+            return $find(['gestor', $k]) ?? $find([$k]);
+        };
+
+        /* ============ 3) FLUJO CLÍNICO Y OPERATIVO POR ROL ============ */
         $defs = [
+            'paciente'    => ['Registrar paciente',  'bi-person-plus',          'Crea o busca la ficha clínica'],
             'orden'       => ['Agendar orden',       'bi-calendar-plus',        'Cita del paciente en una sucursal'],
             'presupuesto' => ['Generar presupuesto', 'bi-calculator',           'Cotiza las prestaciones de una orden'],
             'pago'        => ['Registrar pago',      'bi-credit-card',          'Asocia un pago a un presupuesto'],
             'examen'      => ['Actualizar examen',   'bi-clipboard2-pulse',     'Cambia el estado y cierra la orden'],
+            'imagen'      => ['Subir imágenes',      'bi-file-earmark-image',   'Adjunta placas y archivos del estudio'],
             'informe'     => ['Publicar informe',    'bi-file-earmark-medical', 'Diagnóstico médico y adendums'],
         ];
         $byRole = [
-            'recepcion' => ['orden', 'presupuesto', 'pago'],
-            'tecnico'   => ['examen'],
-            'radiologo' => ['informe', 'examen'],
+            'recepcion' => ['paciente', 'orden', 'presupuesto', 'pago'],
+            'tecnico'   => ['examen', 'imagen'],
+            'radiologo' => ['informe', 'imagen', 'examen'],
             'finanzas'  => ['pago', 'presupuesto'],
-            'admin'     => ['orden', 'presupuesto', 'pago', 'examen', 'informe'],
+            'admin'     => ['paciente', 'orden', 'presupuesto', 'pago', 'examen', 'imagen', 'informe'],
         ];
         $actions = collect($byRole[$group])
             ->map(fn ($k) => ['key' => $k, 'def' => $defs[$k], 'url' => $go($k)])
             ->filter(fn ($a) => $a['url'])
             ->values();
+
+        $quickPacienteUrl = $go('paciente');
+        $quickOrdenUrl    = $go('orden');
 
         $repDefs = [
             'orden'   => ['Órdenes por sucursal y estado',  'bi-building'],
@@ -84,8 +96,6 @@
         $rowBase = $go($rowKey);
 
         /* ============ 4) DATOS (el controlador puede enviar $kpis, $queue, $sucursalNombre) ============ */
-        $demo = ! isset($kpis) && ! isset($queue);
-
         $demoKpis = match ($group) {
             'recepcion' => [
                 ['label' => 'Citas de hoy',            'value' => 18, 'tone' => 'primary', 'go' => 'orden'],
@@ -152,13 +162,13 @@
 
     <style>
         /* =====================================================================
-           BENTO BACK-OFFICE · Colores sólidos e intensos de la paleta
+           BENTO BACK-OFFICE · Flujo clínico ordenado + brillo celeste
            ===================================================================== */
         .vv-dash {
             --vv-card: #1b1d21;
             --vv-card-elev: #23262c;
-            --vv-border: rgba(255, 255, 255, 0.08);
-            --vv-border-hover: rgba(255, 255, 255, 0.18);
+            --vv-border: rgba(107, 201, 198, 0.16);
+            --vv-border-hover: rgba(107, 201, 198, 0.45);
             --vv-text: #f3f4f6;
             --vv-muted: #9aa2b1;
 
@@ -169,17 +179,23 @@
             --vv-blue: #8297D1;
             --vv-sage: #9FB2B0;
             --vv-mint: #6BC9C6;
+            --vv-mint-bright: #88E5E2;
 
-            --vv-radius: 1.1rem;
-            --vv-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.65);
+            /* Brillos celestes */
+            --vv-glow: 0 0 22px rgba(107, 201, 198, 0.55), 0 0 44px rgba(107, 201, 198, 0.22);
+            --vv-glow-soft: 0 10px 28px -8px rgba(107, 201, 198, 0.35), 0 0 18px rgba(107, 201, 198, 0.16);
+
+            --vv-radius: 1.15rem;
+            --vv-shadow: 0 12px 28px -14px rgba(0, 0, 0, 0.75);
             color: var(--vv-text);
+            width: 100%;
         }
 
         [data-bs-theme="light"] .vv-dash {
             --vv-card: #ffffff;
             --vv-card-elev: #f1f5f9;
             --vv-border: rgba(15, 23, 42, 0.09);
-            --vv-border-hover: rgba(15, 23, 42, 0.2);
+            --vv-border-hover: rgba(107, 201, 198, 0.6);
             --vv-text: #0f172a;
             --vv-muted: #64748b;
             --vv-shadow: 0 10px 26px -16px rgba(15, 23, 42, 0.2);
@@ -189,11 +205,11 @@
         .vv-sec-label {
             display: flex;
             align-items: center;
-            gap: 0.65rem;
-            margin: 0 0 0.85rem;
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.1em;
+            gap: 0.75rem;
+            margin: 0 0 0.9rem;
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0.09em;
             text-transform: uppercase;
             color: var(--vv-muted);
         }
@@ -202,94 +218,143 @@
             content: "";
             flex: 1;
             height: 1px;
-            background: var(--vv-border);
+            background: linear-gradient(90deg, rgba(107, 201, 198, 0.35), var(--vv-border));
         }
 
-        /* ---------- Cabecera ---------- */
+        /* ---------- Cabecera Principal Protagonista ---------- */
         .vv-topbar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
-            gap: 1rem;
-            margin-bottom: 1.6rem;
+            gap: 1.25rem;
+            margin-bottom: 1.75rem;
         }
 
-        .vv-greet {
-            margin: 0 0 0.2rem;
-            font-size: 0.92rem;
-            font-weight: 500;
-            color: var(--vv-muted);
+        .vv-hero-ico {
+            width: 4.35rem;
+            height: 4.35rem;
+            border-radius: 1.15rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
+            color: var(--vv-navy-deep);
+            box-shadow: var(--vv-glow);
+            flex-shrink: 0;
         }
 
         .vv-title {
             margin: 0;
-            font-size: 1.85rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            line-height: 1.15;
+            font-size: 2.6rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            line-height: 1.12;
             color: var(--vv-text);
+            text-shadow: 0 0 28px rgba(107, 201, 198, 0.18);
         }
 
         .vv-controls {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.65rem;
+            gap: 0.7rem;
+        }
+
+        .vv-quick-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.65rem 1.2rem;
+            border-radius: 0.85rem;
+            font-size: 1.02rem;
+            font-weight: 800;
+            text-decoration: none;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+            white-space: nowrap;
+        }
+
+        .vv-quick-btn--primary {
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
+            color: var(--vv-navy-deep);
+            box-shadow: 0 0 20px rgba(107, 201, 198, 0.5);
+        }
+
+        .vv-quick-btn--primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--vv-glow);
+            color: var(--vv-navy-deep);
+        }
+
+        .vv-quick-btn--secondary {
+            background: var(--vv-navy);
+            color: var(--vv-cream);
+            border: 1px solid rgba(107, 201, 198, 0.55);
+            box-shadow: 0 0 14px rgba(107, 201, 198, 0.22);
+        }
+
+        .vv-quick-btn--secondary:hover {
+            transform: translateY(-2px);
+            border-color: var(--vv-mint-bright);
+            box-shadow: var(--vv-glow-soft);
+            color: var(--vv-cream);
         }
 
         .vv-pill-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.48rem;
-            padding: 0.45rem 0.95rem;
-            font-size: 0.82rem;
+            gap: 0.55rem;
+            padding: 0.62rem 1.1rem;
+            font-size: 1rem;
             font-weight: 600;
             color: var(--vv-text);
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
-            border-radius: 0.8rem;
+            border-radius: 0.85rem;
+            box-shadow: 0 0 16px rgba(107, 201, 198, 0.1);
         }
 
         .vv-segmented {
             display: inline-flex;
             align-items: center;
-            padding: 0.25rem;
+            padding: 0.28rem;
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
-            border-radius: 0.85rem;
-            gap: 0.2rem;
+            border-radius: 0.9rem;
+            gap: 0.25rem;
         }
 
         .vv-seg-btn {
             border: 0;
             background: transparent;
             color: var(--vv-muted);
-            font-size: 0.82rem;
-            font-weight: 500;
-            padding: 0.38rem 0.9rem;
-            border-radius: 0.65rem;
+            font-size: 0.98rem;
+            font-weight: 600;
+            padding: 0.48rem 1rem;
+            border-radius: 0.7rem;
             transition: all 0.16s ease;
             cursor: pointer;
         }
 
         .vv-seg-btn:hover {
-            color: var(--vv-text);
+            color: var(--vv-mint-bright);
         }
 
         .vv-seg-btn.is-active {
             background: var(--vv-navy);
             color: var(--vv-cream);
             font-weight: 700;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(107, 201, 198, 0.45);
+            box-shadow: 0 0 16px rgba(107, 201, 198, 0.28);
         }
 
-        /* ---------- Fila 1: KPIs prominentes ---------- */
+        /* ---------- Fila 1: KPIs compactos ---------- */
         .vv-kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.75rem;
+            grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+            gap: 1.05rem;
+            margin-bottom: 1.7rem;
         }
 
         .vv-kpi-card {
@@ -299,16 +364,16 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            gap: 1rem;
-            padding: 1.35rem 1.45rem;
+            gap: 0.75rem;
+            padding: 1.15rem 1.35rem;
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow);
+            box-shadow: var(--vv-shadow), 0 0 20px -10px rgba(107, 201, 198, 0.22);
             text-decoration: none;
             color: var(--vv-text);
             overflow: hidden;
-            transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
         }
 
         .vv-kpi-card::before {
@@ -317,15 +382,16 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 4px;
+            height: 3.5px;
             background: var(--k-color);
-            opacity: 1;
+            box-shadow: 0 2px 16px rgba(107, 201, 198, 0.65);
         }
 
         a.vv-kpi-card:hover {
-            transform: translateY(-3px);
-            border-color: var(--k-color);
+            transform: translateY(-2px);
+            border-color: var(--vv-mint);
             background: var(--vv-card-elev);
+            box-shadow: var(--vv-glow-soft);
             color: var(--vv-text);
         }
 
@@ -342,23 +408,23 @@
         }
 
         .vv-kpi-label {
-            font-size: 0.86rem;
+            font-size: 1.05rem;
             font-weight: 600;
             color: var(--vv-muted);
-            line-height: 1.3;
+            line-height: 1.25;
         }
 
         .vv-kpi-ico {
-            width: 2.6rem;
-            height: 2.6rem;
-            border-radius: 0.75rem;
+            width: 2.65rem;
+            height: 2.65rem;
+            border-radius: 0.78rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             background: var(--k-color);
             color: var(--k-ink);
-            box-shadow: 0 6px 14px -6px var(--k-color);
+            box-shadow: 0 0 18px rgba(107, 201, 198, 0.42);
             flex-shrink: 0;
         }
 
@@ -366,33 +432,36 @@
             display: flex;
             align-items: flex-end;
             justify-content: space-between;
-            gap: 0.5rem;
+            gap: 0.65rem;
         }
 
         .vv-kpi-value {
-            font-size: 2.05rem;
-            font-weight: 700;
-            line-height: 1.05;
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.08;
             letter-spacing: -0.02em;
             font-variant-numeric: tabular-nums;
             color: var(--vv-text);
+            white-space: nowrap;
         }
 
         .vv-kpi-go {
-            font-size: 0.8rem;
+            font-size: 0.98rem;
             font-weight: 700;
-            color: var(--k-color);
+            color: var(--vv-mint);
+            text-shadow: 0 0 12px rgba(107, 201, 198, 0.45);
             display: inline-flex;
             align-items: center;
-            gap: 0.25rem;
+            gap: 0.3rem;
+            white-space: nowrap;
         }
 
-        /* ---------- Fila 2: Gestores prominentes ---------- */
+        /* ---------- Fila 2: Flujo Clínico Cronológico ---------- */
         .vv-gestor-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.85rem;
+            grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+            gap: 1.15rem;
+            margin-bottom: 1.9rem;
         }
 
         .vv-gestor-card {
@@ -401,31 +470,36 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 1.35rem 1.45rem;
+            padding: 1.45rem 1.55rem;
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow);
+            box-shadow: var(--vv-shadow), 0 0 20px -10px rgba(107, 201, 198, 0.2);
             text-decoration: none;
             color: var(--vv-text);
-            transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
         }
 
-        .vv-gestor-card:nth-child(2) { --g-color: var(--vv-cream); }
-        .vv-gestor-card:nth-child(3) { --g-color: var(--vv-mint); }
+        .vv-gestor-card:nth-child(1) { --g-color: var(--vv-mint); }
+        .vv-gestor-card:nth-child(2) { --g-color: var(--vv-blue); }
+        .vv-gestor-card:nth-child(3) { --g-color: var(--vv-cream); }
         .vv-gestor-card:nth-child(4) { --g-color: var(--vv-sage); }
         .vv-gestor-card:nth-child(5) { --g-color: var(--vv-blue); }
+        .vv-gestor-card:nth-child(6) { --g-color: var(--vv-mint); }
+        .vv-gestor-card:nth-child(7) { --g-color: var(--vv-cream); }
 
         .vv-gestor-card:hover {
             transform: translateY(-3px);
-            border-color: var(--g-color);
+            border-color: var(--vv-mint);
             background: var(--vv-card-elev);
+            box-shadow: var(--vv-glow-soft);
             color: var(--vv-text);
         }
 
         .vv-gestor-card.is-featured {
             background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
-            border-color: var(--vv-blue);
+            border-color: var(--vv-mint);
+            box-shadow: 0 12px 32px -10px rgba(107, 201, 198, 0.45), 0 0 22px rgba(107, 201, 198, 0.22), inset 0 1px 0 rgba(107, 201, 198, 0.45);
             color: var(--vv-cream);
         }
 
@@ -438,8 +512,8 @@
         }
 
         .vv-gestor-card.is-featured .vv-gestor-num {
-            color: var(--vv-cream);
-            opacity: 0.55;
+            color: var(--vv-mint-bright);
+            opacity: 0.8;
         }
 
         /* Cuando el rol tiene 1 solo gestor: tarjeta ancha destacada */
@@ -448,53 +522,56 @@
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
-            gap: 1.25rem 1.75rem;
-            padding: 1.65rem 1.85rem;
+            gap: 1.5rem 2rem;
+            padding: 1.75rem 2rem;
             background: linear-gradient(135deg, var(--vv-navy) 0%, var(--vv-navy-deep) 100%);
-            border: 1.5px solid var(--vv-blue);
+            border: 1.5px solid var(--vv-mint);
             border-radius: var(--vv-radius);
-            box-shadow: 0 16px 34px -14px rgba(40, 51, 79, 0.75);
+            box-shadow: 0 14px 36px -10px rgba(107, 201, 198, 0.5), 0 0 26px rgba(107, 201, 198, 0.25);
             text-decoration: none;
             color: var(--vv-cream);
-            margin-bottom: 1.85rem;
-            transition: transform 0.18s ease, filter 0.18s ease;
+            margin-bottom: 1.9rem;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
         }
 
         .vv-gestor-banner:hover {
             transform: translateY(-2px);
+            box-shadow: 0 16px 42px -8px rgba(107, 201, 198, 0.65), 0 0 32px rgba(107, 201, 198, 0.35);
             filter: brightness(1.06);
             color: var(--vv-cream);
         }
 
         .vv-gestor-banner__ico {
-            width: 3.5rem;
-            height: 3.5rem;
+            width: 3.9rem;
+            height: 3.9rem;
             border-radius: 1rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.6rem;
-            background: var(--vv-mint);
+            font-size: 1.85rem;
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
+            box-shadow: var(--vv-glow);
             flex-shrink: 0;
         }
 
         .vv-gestor-banner__stat {
-            padding: 0 1.5rem;
-            border-left: 1px solid rgba(245, 230, 211, 0.35);
+            padding: 0 1.65rem;
+            border-left: 1px solid rgba(107, 201, 198, 0.4);
             text-align: right;
         }
 
         .vv-gestor-banner__btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.45rem;
-            padding: 0.7rem 1.35rem;
-            border-radius: 0.75rem;
-            background: var(--vv-mint);
+            gap: 0.5rem;
+            padding: 0.8rem 1.45rem;
+            border-radius: 0.8rem;
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
+            box-shadow: 0 0 22px rgba(107, 201, 198, 0.6);
             font-weight: 800;
-            font-size: 0.92rem;
+            font-size: 1.05rem;
         }
 
         .vv-gestor-top {
@@ -505,40 +582,41 @@
         }
 
         .vv-gestor-num {
-            font-size: 1.35rem;
-            font-weight: 700;
+            font-size: 1.55rem;
+            font-weight: 800;
             color: var(--vv-muted);
             opacity: 0.55;
             font-variant-numeric: tabular-nums;
         }
 
         .vv-gestor-ico {
-            width: 2.8rem;
-            height: 2.8rem;
-            border-radius: 0.8rem;
+            width: 3.1rem;
+            height: 3.1rem;
+            border-radius: 0.85rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.28rem;
+            font-size: 1.48rem;
             background: var(--g-color);
             color: var(--g-ink);
-            box-shadow: 0 6px 14px -6px var(--g-color);
-            transition: transform 0.18s ease;
+            box-shadow: 0 0 20px rgba(107, 201, 198, 0.45);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
 
         .vv-gestor-card:hover .vv-gestor-ico {
-            transform: scale(1.07);
+            transform: scale(1.08);
+            box-shadow: var(--vv-glow);
         }
 
         .vv-gestor-title {
-            font-size: 1.08rem;
+            font-size: 1.28rem;
             font-weight: 700;
-            margin: 0 0 0.3rem;
+            margin: 0 0 0.35rem;
             color: var(--vv-text);
         }
 
         .vv-gestor-desc {
-            font-size: 0.84rem;
+            font-size: 1.02rem;
             color: var(--vv-muted);
             line-height: 1.4;
             margin: 0 0 1.15rem;
@@ -547,10 +625,11 @@
         .vv-gestor-cta {
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
-            font-size: 0.86rem;
+            gap: 0.45rem;
+            font-size: 1.02rem;
             font-weight: 700;
-            color: var(--g-color);
+            color: var(--vv-mint);
+            text-shadow: 0 0 12px rgba(107, 201, 198, 0.4);
             margin-top: auto;
         }
 
@@ -559,22 +638,23 @@
             background: var(--vv-card);
             border: 1px solid var(--vv-border);
             border-radius: var(--vv-radius);
-            box-shadow: var(--vv-shadow);
+            box-shadow: var(--vv-shadow), 0 0 26px -12px rgba(107, 201, 198, 0.22);
             overflow: hidden;
         }
 
         .vv-card-head {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
-            gap: 0.75rem;
-            padding: 1.15rem 1.4rem;
+            gap: 0.85rem;
+            padding: 1.3rem 1.6rem;
             border-bottom: 1px solid var(--vv-border);
         }
 
         .vv-card-title {
-            margin: 0;
-            font-size: 1.05rem;
+            margin: 0 0 0.15rem;
+            font-size: 1.32rem;
             font-weight: 700;
             color: var(--vv-text);
         }
@@ -583,25 +663,26 @@
         .vv-table {
             width: 100%;
             margin: 0;
-            font-size: 0.9rem;
+            font-size: 1.12rem;
             color: var(--vv-text);
             border-collapse: collapse;
         }
 
         .vv-table th {
-            font-size: 0.72rem;
-            font-weight: 700;
+            font-size: 0.9rem;
+            font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.07em;
+            letter-spacing: 0.06em;
             color: var(--vv-muted);
-            background: rgba(255, 255, 255, 0.02);
-            padding: 0.8rem 1.2rem;
+            background: var(--vv-card-elev);
+            padding: 1.05rem 1.35rem;
             border-bottom: 1px solid var(--vv-border);
             white-space: nowrap;
         }
 
         .vv-table td {
-            padding: 0.95rem 1.2rem;
+            font-size: 1.12rem;
+            padding: 1.12rem 1.35rem;
             border-bottom: 1px solid var(--vv-border);
             vertical-align: middle;
         }
@@ -611,7 +692,7 @@
         }
 
         .vv-table tbody tr:hover {
-            background: rgba(255, 255, 255, 0.035);
+            background: rgba(107, 201, 198, 0.08);
         }
 
         .vv-table tbody tr.is-urgent {
@@ -619,107 +700,123 @@
         }
 
         .vv-table tbody tr.is-urgent td:first-child {
-            box-shadow: inset 4px 0 0 var(--vv-cream);
+            box-shadow: inset 4px 0 0 var(--vv-mint);
         }
 
         .vv-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.35rem;
-            padding: 0.3rem 0.76rem;
+            gap: 0.4rem;
+            padding: 0.36rem 0.88rem;
             border-radius: 999px;
-            font-size: 0.76rem;
+            font-size: 0.92rem;
             font-weight: 700;
             white-space: nowrap;
         }
 
-        .vv-badge--primary   { background: var(--vv-blue);  color: var(--vv-navy-deep); }
-        .vv-badge--success   { background: var(--vv-mint);  color: var(--vv-navy-deep); }
+        .vv-badge--primary   { background: var(--vv-blue);  color: var(--vv-navy-deep); box-shadow: 0 0 12px rgba(130, 151, 209, 0.35); }
+        .vv-badge--success   { background: var(--vv-mint);  color: var(--vv-navy-deep); box-shadow: 0 0 14px rgba(107, 201, 198, 0.5); }
         .vv-badge--warning   { background: var(--vv-cream); color: var(--vv-navy-deep); }
         .vv-badge--info      { background: var(--vv-sage);  color: var(--vv-navy-deep); }
         .vv-badge--secondary { background: var(--vv-navy);  color: var(--vv-cream); border: 1px solid var(--vv-sage); }
-        .vv-badge--urgent    { background: var(--vv-cream); color: var(--vv-navy-deep); border: 1.5px solid var(--vv-navy); font-weight: 800; }
+        .vv-badge--urgent    { background: var(--vv-cream); color: var(--vv-navy-deep); border: 1.5px solid var(--vv-mint); font-weight: 800; box-shadow: 0 0 12px rgba(107, 201, 198, 0.35); }
 
         .vv-action-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
-            padding: 0.44rem 0.95rem;
-            border-radius: 0.6rem;
-            font-size: 0.82rem;
+            gap: 0.45rem;
+            padding: 0.52rem 1.08rem;
+            border-radius: 0.68rem;
+            font-size: 0.98rem;
             font-weight: 700;
             color: var(--vv-cream);
             background: var(--vv-navy);
-            border: 1px solid var(--vv-blue);
+            border: 1px solid rgba(107, 201, 198, 0.55);
+            box-shadow: 0 0 14px rgba(107, 201, 198, 0.2);
             text-decoration: none;
             transition: all 0.15s ease;
             white-space: nowrap;
         }
 
         .vv-action-btn:hover {
-            background: var(--vv-mint);
-            border-color: var(--vv-mint);
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
+            border-color: var(--vv-mint-bright);
+            box-shadow: var(--vv-glow);
             color: var(--vv-navy-deep);
         }
 
         /* ---------- Lateral: Urgentes y Reportes ---------- */
         .vv-side-list {
-            padding: 0.85rem 1.1rem;
+            padding: 1rem 1.25rem;
             display: flex;
             flex-direction: column;
-            gap: 0.6rem;
+            gap: 0.75rem;
         }
 
         .vv-side-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 0.8rem;
-            padding: 0.85rem 1rem;
-            border-radius: 0.8rem;
+            gap: 0.9rem;
+            padding: 0.95rem 1.15rem;
+            border-radius: 0.85rem;
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--vv-border);
             text-decoration: none;
             color: var(--vv-text);
-            transition: background-color 0.15s ease, border-color 0.15s ease;
+            transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
         a.vv-side-item:hover {
             background: var(--vv-navy);
-            border-color: var(--vv-blue);
+            border-color: var(--vv-mint);
+            box-shadow: var(--vv-glow-soft);
             color: var(--vv-cream);
         }
 
         .vv-rep-ico {
-            width: 2.3rem;
-            height: 2.3rem;
-            border-radius: 0.65rem;
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 0.75rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: var(--vv-mint);
+            font-size: 1.22rem;
+            background: linear-gradient(135deg, var(--vv-mint-bright) 0%, var(--vv-mint) 100%);
             color: var(--vv-navy-deep);
+            box-shadow: 0 0 18px rgba(107, 201, 198, 0.55);
             flex-shrink: 0;
         }
     </style>
 
     <div class="vv-dash">
 
-        @if($demo)
-            <div class="alert py-2 small mb-3 rounded-3" style="background: var(--vv-navy); border: 1px solid var(--vv-blue); color: var(--vv-cream);" role="note">
-                <i class="bi bi-info-circle me-1" style="color: var(--vv-mint);"></i>
-                Mostrando <strong>datos de ejemplo</strong>. Envía <code>$kpis</code> y <code>$queue</code> desde el controlador para ver métricas reales.
-            </div>
-        @endif
-
-        {{-- ============ ENCABEZADO ============ --}}
+        {{-- ============ ENCABEZADO PRINCIPAL PROTAGONISTA ============ --}}
         <div class="vv-topbar">
-            <div>
-                <p class="vv-greet">{{ $greeting }}, {{ $firstName }}</p>
-                <h1 class="vv-title">Panel operativo</h1>
+            <div class="d-flex align-items-center gap-3">
+                <span class="vv-hero-ico">
+                    <i class="bi bi-lungs"></i>
+                </span>
+                <div>
+                    <h1 class="vv-title">{{ $greeting }}, {{ $firstName }}</h1>
+                </div>
             </div>
 
             <div class="vv-controls">
+                @if($quickPacienteUrl)
+                    <a href="{{ $quickPacienteUrl }}" class="vv-quick-btn vv-quick-btn--primary">
+                        <i class="bi bi-person-plus-fill"></i>
+                        Nuevo paciente
+                    </a>
+                @endif
+
+                @if($quickOrdenUrl)
+                    <a href="{{ $quickOrdenUrl }}" class="vv-quick-btn vv-quick-btn--secondary">
+                        <i class="bi bi-calendar-plus"></i>
+                        Nueva orden
+                    </a>
+                @endif
+
                 <span class="vv-pill-badge">
                     <i class="bi bi-person-badge" style="color: var(--vv-mint);"></i>
                     {{ $roleName }}
@@ -741,7 +838,7 @@
             </div>
         </div>
 
-        {{-- ============ BLOQUE 1: INDICADORES CLAVE (KPIs PROMINENTES) ============ --}}
+        {{-- ============ BLOQUE 1: INDICADORES CLAVE COMPACTOS ============ --}}
         @if($kpis->isNotEmpty())
             <h2 class="vv-sec-label">Resumen del turno</h2>
             <div class="vv-kpi-grid">
@@ -771,8 +868,8 @@
             </div>
         @endif
 
-        {{-- ============ BLOQUE 2: GESTORES DEL ROL ============ --}}
-        <h2 class="vv-sec-label">Gestores disponibles</h2>
+        {{-- ============ BLOQUE 2: FLUJO CLÍNICO Y OPERATIVO ============ --}}
+        <h2 class="vv-sec-label">Flujo operativo</h2>
         @if($actionCnt === 1)
             @php $single = $actions->first(); @endphp
             <a href="{{ $single['url'] }}" class="vv-gestor-banner">
@@ -781,18 +878,18 @@
                         <i class="bi {{ $single['def'][1] }}"></i>
                     </span>
                     <div>
-                        <div class="fs-4 fw-bold lh-sm">{{ $single['def'][0] }}</div>
-                        <div style="opacity: 0.9; font-size: 0.92rem;">{{ $single['def'][2] }}</div>
+                        <div style="font-size: 1.6rem; font-weight: 800; line-height: 1.2;">{{ $single['def'][0] }}</div>
+                        <div style="opacity: 0.9; font-size: 1.08rem;">{{ $single['def'][2] }}</div>
                     </div>
                 </div>
 
                 <div class="d-flex align-items-center gap-4 ms-auto">
                     <div class="vv-gestor-banner__stat d-none d-sm-block">
-                        <div style="font-size: 0.78rem; opacity: 0.88;">{{ $primaryKpi['label'] }}</div>
-                        <div class="fs-2 fw-bold lh-1">{{ $primaryKpi['value'] }}</div>
+                        <div style="font-size: 0.94rem; opacity: 0.88;">{{ $primaryKpi['label'] }}</div>
+                        <div style="font-size: 2.15rem; font-weight: 800; line-height: 1.05;">{{ $primaryKpi['value'] }}</div>
                     </div>
                     <span class="vv-gestor-banner__btn">
-                        Abrir gestor <i class="bi bi-arrow-right"></i>
+                        Abrir módulo <i class="bi bi-arrow-right"></i>
                     </span>
                 </div>
             </a>
@@ -811,7 +908,7 @@
                             <p class="vv-gestor-desc">{{ $a['def'][2] }}</p>
                         </div>
                         <span class="vv-gestor-cta">
-                            Abrir gestor <i class="bi bi-arrow-right"></i>
+                            Abrir módulo <i class="bi bi-arrow-right"></i>
                         </span>
                     </a>
                 @endforeach
@@ -821,7 +918,7 @@
                 @forelse($nav as $m)
                     <a class="vv-action-btn" href="{{ $m['url'] }}">{{ $m['label'] }}</a>
                 @empty
-                    <span class="text-secondary">Tu perfil no tiene módulos habilitados.</span>
+                    <span style="color: var(--vv-muted); font-size: 1.1rem;">Tu perfil no tiene módulos habilitados.</span>
                 @endforelse
             </div>
         @endif
@@ -834,7 +931,7 @@
                     <div class="vv-card-head">
                         <div>
                             <h3 class="vv-card-title">{{ $queueTitle }}</h3>
-                            <span style="font-size: 0.78rem; color: var(--vv-muted);">Ordenado por prioridad clínica y hora</span>
+                            <span style="font-size: 0.98rem; color: var(--vv-muted);">Ordenado por prioridad clínica y hora</span>
                         </div>
                         <span class="vv-pill-badge">{{ $queue->count() }} registros</span>
                     </div>
@@ -886,7 +983,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="text-center py-5" style="color: var(--vv-muted);">
+                                        <td colspan="6" class="text-center py-5" style="color: var(--vv-muted); font-size: 1.15rem;">
                                             No hay elementos pendientes en la cola.
                                         </td>
                                     </tr>
@@ -912,8 +1009,8 @@
                                         @foreach($urgentes->take(4) as $u)
                                             <div class="vv-side-item">
                                                 <div class="min-w-0">
-                                                    <div class="fw-bold" style="font-size: 0.9rem;">{{ $u['orden'] }}</div>
-                                                    <div class="text-truncate" style="font-size: 0.8rem; color: var(--vv-muted);">{{ $u['examen'] }}</div>
+                                                    <div class="fw-bold" style="font-size: 1.1rem;">{{ $u['orden'] }}</div>
+                                                    <div class="text-truncate" style="font-size: 0.96rem; color: var(--vv-muted);">{{ $u['examen'] }}</div>
                                                 </div>
                                                 <span class="vv-badge vv-badge--urgent">Urgente</span>
                                             </div>
@@ -929,7 +1026,7 @@
                                 <section class="vv-card">
                                     <div class="vv-card-head">
                                         <h3 class="vv-card-title">Reportes del sistema</h3>
-                                        <i class="bi bi-bar-chart-line" style="color: var(--vv-muted);"></i>
+                                        <i class="bi bi-bar-chart-line fs-5" style="color: var(--vv-muted);"></i>
                                     </div>
                                     <div class="vv-side-list">
                                         @foreach($reports as $r)
@@ -938,9 +1035,9 @@
                                                     <span class="vv-rep-ico">
                                                         <i class="bi {{ $r['def'][1] }}"></i>
                                                     </span>
-                                                    <span class="fw-medium" style="font-size: 0.88rem;">{{ $r['def'][0] }}</span>
+                                                    <span class="fw-semibold" style="font-size: 1.08rem;">{{ $r['def'][0] }}</span>
                                                 </span>
-                                                <i class="bi bi-chevron-right" style="color: var(--vv-muted); font-size: 0.82rem;"></i>
+                                                <i class="bi bi-chevron-right" style="color: var(--vv-muted); font-size: 1.05rem;"></i>
                                             </a>
                                         @endforeach
                                     </div>

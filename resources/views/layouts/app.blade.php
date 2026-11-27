@@ -7,6 +7,10 @@
     <meta name="color-scheme" content="dark light">
     <title>@yield('title', $title ?? 'IMAJ') | Gestión Radiológica</title>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+
     {{-- Aplica tema, tamaño de texto y ancho del menú guardados antes de pintar la página --}}
     <script>
         (function () {
@@ -30,9 +34,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
     <style>
-        /* =====================================================================
-           LAYOUT GLOBAL IMAJ · Bento Dark Matte + Paleta Clínica
-           ===================================================================== */
+
         :root,
         .app-wrapper {
             --lte-sidebar-width: 335px;
@@ -96,6 +98,21 @@
             background-color: var(--imaj-bg);
             color: var(--imaj-text);
             font-size: 1rem;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-variant-numeric: tabular-nums;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1, h2, h3,
+        .vv-ci-title,
+        .vv-cf-title,
+        .vv-cs-title,
+        .vv-cd-title,
+        .vv-g-title,
+        .brand-text {
+            font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em;
         }
 
         body.imaj-resizing-sidebar,
