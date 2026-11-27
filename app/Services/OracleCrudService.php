@@ -89,9 +89,38 @@ class OracleCrudService
         return $this->hideCredentials($table, [$row])[0];
     }
 
-    public function paginate(string $table, int $perPage = 20): LengthAwarePaginator
-    {
+    public function paginate(
+        string $table,
+        int $perPage = 20,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+    ): LengthAwarePaginator {
         $rows = collect($this->rows($table));
+
+        $dateColumn = match (strtoupper($table)) {
+            'IMAJ_ORDENES' => 'FECHA_CITA',
+            'IMAJ_EXAMENES' => 'FECHA_SOLICITUD',
+            default => null,
+        };
+
+        if ($dateColumn !== null && ($dateFrom !== null || $dateTo !== null)) {
+            $rows = $rows->filter(function (object $row) use ($dateColumn, $dateFrom, $dateTo): bool {
+                $rawDate = $row->{$dateColumn} ?? '';
+                $rawDate = $rawDate instanceof \DateTimeInterface
+                    ? $rawDate->format('Y-m-d')
+                    : trim((string) $rawDate);
+
+                if (! preg_match('/^\d{4}-\d{2}-\d{2}/', $rawDate, $matches)) {
+                    return false;
+                }
+
+                $date = $matches[0];
+
+                return ($dateFrom === null || $date >= $dateFrom)
+                    && ($dateTo === null || $date <= $dateTo);
+            })->values();
+        }
+
         $page = LengthAwarePaginator::resolveCurrentPage();
 
         return new LengthAwarePaginator(
@@ -224,11 +253,13 @@ class OracleCrudService
             return $this->scopedReport($procedure, $scope);
         }
 
-        return DB::connection()->executeProcedureWithCursor(
+        $rows = DB::connection()->executeProcedureWithCursor(
             'IMAJ_APP_PKG.'.$procedure,
             [],
             ':p_cursor',
         );
+
+        return $this->normalizeColumnNames($rows);
     }
 
     /**
@@ -278,7 +309,12 @@ class OracleCrudService
             $data['CONTRASEÑA'] = (string) $data['CONTRASEÑA'];
         }
 
-        return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        $cleaned = array_filter(
+            $data,
+            static fn ($value): bool => $value !== null && $value !== '',
+        );
+
+        return json_encode($cleaned, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
     }
 
     /**

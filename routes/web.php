@@ -63,7 +63,7 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
         $urgentesCnt = DB::table('IMAJ_EXAMENES')
             ->when($examIds !== null, fn ($query) => $query->whereIn('ID', $examIds))
             ->where('URGENCIA', 1)
-            ->where('ESTADO', '<>', 2)
+            ->whereIn('ESTADO', [1, 2])
             ->count();
 
         $kpis = [
@@ -80,20 +80,22 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
             ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
             ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
             ->when($orderIds !== null, fn ($query) => $query->whereIn('o.ID', $orderIds))
+            ->whereRaw('NVL(o.EJECUTADA, 0) = 0')
+            ->whereRaw('NVL(o.ESTADO, 0) <> 3')
             ->select(
                 'o.ID as id',
                 DB::raw("'ORD-' || o.ID as orden"),
                 DB::raw("p.NOMBRE || ' ' || p.APELLIDO_P as paciente"),
                 DB::raw("NVL(prest.NOMBRE, 'Examen radiológico') as examen"),
-                DB::raw("LPAD(o.HORA_CITA, 2, '0') || ':00' as hora"),
-                DB::raw("CASE o.ESTADO WHEN 3 THEN 'EJECUTADA' WHEN 2 THEN 'EN_PROCESO' ELSE 'PENDIENTE' END as estado"),
-                DB::raw('NVL(e.URGENCIA, 0) as urgente')
+                'o.HORA_CITA as hora_cita',
+                DB::raw("CASE o.ESTADO WHEN 0 THEN 'AGENDADA' WHEN 1 THEN 'PENDIENTE' WHEN 2 THEN 'EN_PROCESO' WHEN 3 THEN 'EJECUTADA' ELSE 'PENDIENTE' END as estado"),
+                DB::raw('CASE WHEN NVL(e.URGENCIA, 0) = 1 AND e.ESTADO IN (1, 2) THEN 1 ELSE 0 END as urgente')
             )
             ->orderByDesc('urgente')
             ->orderBy('o.ID')
             ->limit(20)
             ->get()
-            ->map(fn ($r) => (array) $r)
+            ->map(fn ($r) => array_change_key_case((array) $r, CASE_LOWER))
             ->all();
 
         return view('crud.home', compact('kpis', 'queue'));
