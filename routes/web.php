@@ -32,19 +32,17 @@ Route::middleware('guest')->group(function (): void {
 Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', function () {
-        $hoy = now()->toDateString();
-
         $ordenesHoy = DB::table('IMAJ_ORDENES')
-            ->whereDate('FECHA_CITA', $hoy)
+            ->whereRaw('TRUNC(FECHA_CITA) = TRUNC(SYSDATE)')
             ->count();
 
         $pendientes = DB::table('IMAJ_ORDENES')
-            ->whereDate('FECHA_CITA', $hoy)
+            ->whereRaw('TRUNC(FECHA_CITA) = TRUNC(SYSDATE)')
             ->where('EJECUTADA', 0)
             ->count();
 
         $ejecutadas = DB::table('IMAJ_ORDENES')
-            ->whereDate('FECHA_CITA', $hoy)
+            ->whereRaw('TRUNC(FECHA_CITA) = TRUNC(SYSDATE)')
             ->where('EJECUTADA', 1)
             ->count();
 

@@ -167,11 +167,13 @@ class OracleCrudService
             throw new InvalidArgumentException('Reporte PL/SQL no habilitado.');
         }
 
-        return DB::connection()->executeProcedureWithCursor(
+        $rows = DB::connection()->executeProcedureWithCursor(
             'IMAJ_APP_PKG.'.$procedure,
             [],
             ':p_cursor',
         );
+
+        return $this->normalizeColumnNames($rows);
     }
 
     /**

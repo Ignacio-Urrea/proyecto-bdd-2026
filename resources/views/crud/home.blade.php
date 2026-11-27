@@ -952,7 +952,10 @@
                                 @forelse($queue->take(8) as $row)
                                     @php
                                         $estado = strtoupper((string) ($row['estado'] ?? ''));
-                                        $rowUrl = $row['url'] ?? ($rowBase ? $rowBase . '?orden=' . urlencode($row['id'] ?? $row['orden']) : null);
+                                        $rowUrl = $row['url']
+                                            ?? (\Illuminate\Support\Facades\Route::has('ordenes.show')
+                                                ? route('ordenes.show', $row['id'])
+                                                : ($find(['orden']) ? $find(['orden']) . '?orden=' . urlencode($row['id'] ?? $row['orden']) : null));
                                     @endphp
                                     <tr class="{{ ! empty($row['urgente']) ? 'is-urgent' : '' }}">
                                         <td class="fw-bold text-nowrap" style="font-variant-numeric: tabular-nums;">{{ $row['orden'] }}</td>
