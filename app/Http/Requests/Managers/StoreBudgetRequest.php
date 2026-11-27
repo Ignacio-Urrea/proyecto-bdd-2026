@@ -11,7 +11,7 @@ class StoreBudgetRequest extends BaseFormRequest
         return [
             'ORDEN_ID' => ['required', 'integer'],
             'PRESTACION_IDS' => ['required', 'array', 'min:1'],
-            'PRESTACION_IDS.*' => ['required', 'integer'],
+            'PRESTACION_IDS.*' => ['required', 'integer', 'distinct'],
         ];
     }
 }

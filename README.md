@@ -31,9 +31,11 @@ El proyecto usa Laravel-OCI8 para conectarse a Oracle. Cada entorno necesita PHP
 
 No agregues `.env` ni contraseñas al repositorio. En Windows, reinicia la terminal después de cambiar el `PATH`.
 
+`clinicas_tablas.sql` documenta el esquema actual de tablas, incluidas las columnas agregadas posteriormente como `RADIOLOGO_ID`; las migraciones siguen siendo la ruta de instalación de la aplicación e instalan además secuencias, paquetes y triggers. No ejecutes el SQL base y las migraciones sobre el mismo esquema.
+
 ## Mantenedores IMAJ
 
-La aplicación incluye modelos sin prefijo (`Rol`, `Paciente`, etc.) y CRUD web para las 16 tablas. Las tablas y secuencias conservan el prefijo `IMAJ_`. Las operaciones CRUD llaman a `IMAJ_APP_PKG` mediante Laravel-OCI8; los listados y reportes consumen cursores Oracle.
+La aplicación incluye modelos sin prefijo (`Rol`, `Paciente`, etc.) y CRUD web para las 16 tablas. Las tablas y secuencias conservan el prefijo `IMAJ_`. Laravel valida entradas y controla el acceso a rutas; `IMAJ_ACCESS_PKG` aplica en Oracle el alcance por usuario para lecturas, escrituras, gestores, paginación y reportes, y delega las mutaciones de negocio a `IMAJ_APP_PKG`. La aplicación solo envía el ID autenticado, no listas de registros autorizados.
 
 Las vistas de cada modelo están en `resources/views/{modelo}/` (por ejemplo, `resources/views/ciudad/`) y contienen `index`, `create`, `update`, `delete`, `form` y `view`. Los formularios y listados reutilizan plantillas comunes para mantener el mismo comportamiento y facilitar su personalización por modelo.
 
@@ -41,11 +43,23 @@ La capa HTTP usa rutas protegidas por middleware, Form Requests para validar CRU
 
 Antes de ejecutar `php artisan migrate`, confirma que las tablas `IMAJ_*` no existan ya en el esquema. Las migraciones crean las tablas y secuencias desde cero; no ejecutes `migrate:fresh` en una base con datos.
 
-Después de migrar, crea el primer administrador de forma interactiva con `php artisan app:create-admin`. La contraseña se solicita de forma oculta y se almacena como hash en `PASSWORD_HASH`; los valores existentes de `CONTRASEÑA` se copian al nuevo campo hasheados, sin borrar ni modificar la columna original.
+La migración de consolidación mantiene el hash en `IMAJ_USUARIOS.CONTRASEÑA` y elimina la columna duplicada `PASSWORD_HASH`. Para una instalación vacía, crea el primer administrador con `php artisan app:create-admin` o carga las cuentas y datos de demostración indicados a continuación.
 
-Perfiles iniciales: `ADMINISTRADOR`, `RECEPCIONISTA`, `TECNICO`, `RADIOLOGO` y `FINANZAS`. Las autorizaciones de rutas están centralizadas en `config/imaj.php`.
+Los perfiles activos de la aplicación son `SUPERADMIN`, `CLINICA_ADMIN`, `SUCURSAL_ADMIN` y `RADIOLOGO`; las autorizaciones están centralizadas en `config/imaj.php`.
 
-La pauta se cubre con cinco gestores (agendar orden, generar presupuesto, registrar pago, actualizar examen y publicar informe), tres reportes (órdenes por sucursal/estado, ingresos mensuales y exámenes por urgencia/estado), `IMAJ_APP_PKG` (CRUD, gestores, reportes y función de total de presupuesto) y triggers de secuencia/auditoría en las 16 tablas.
+### Datos de demostración Oracle
+
+Después de `php artisan migrate`, ejecuta `@database/oracle/IMAJ_DEMO_SEED.sql` desde SQLcl o SQL*Plus, conectado al mismo esquema Oracle. El script carga las seis cuentas requeridas, dos clínicas y sucursales, 10 pacientes sintéticos, cinco prestaciones por clínica y 20 órdenes con sus presupuestos, pagos, exámenes, informes e imágenes de ejemplo. También carga tres regiones, nueve ciudades y 27 direcciones.
+
+El script funciona tanto después de una migración limpia como en una base con datos. Reutiliza o actualiza las filas que identifica como demo, sincroniza las secuencias antes de insertar y conserva las demás filas. Configura las cuentas solicitadas (incluido el `superadmin` de la migración) con la contraseña suministrada como hash. Solo elimina los roles heredados `ADMINISTRADOR`, `RECEPCIONISTA`, `TECNICO` y `FINANZAS` cuando no están asignados a ningún usuario; los que tengan usuarios se conservan sin interrumpir la carga. Se puede volver a ejecutar sin duplicar sus filas demo. Las rutas de imágenes e informes son metadatos de demostración, no archivos clínicos reales.
+
+La contraseña común se proporciona como hash bcrypt en un prompt oculto. Genera el hash localmente con `Hash::make(...)` desde Tinker de Laravel y pega solo el resultado en el prompt; no guardes contraseñas ni hashes en el repositorio. Los datos de pacientes y sus RUT son ficticios.
+
+Las prestaciones pertenecen a una clínica mediante `CLINICA_ID`. Al generar un presupuesto, Oracle obtiene la clínica de la sucursal de la orden y solo acepta prestaciones habilitadas de esa clínica. Cada prestación solo puede aparecer una vez por presupuesto; la base de datos impone esa unicidad en el detalle.
+
+El diagrama de entidades y la revisión de normalización están en [database/ESQUEMA_Y_3FN.md](database/ESQUEMA_Y_3FN.md). El modelo mantiene como pendiente resolver si una imagen puede asociarse simultáneamente a un examen y a un informe.
+
+La pauta se cubre en código con cinco gestores (agendar orden, generar presupuesto, registrar pago, actualizar examen y publicar informe), tres reportes expuestos en la aplicación (órdenes por sucursal/estado, ingresos mensuales y exámenes por urgencia/estado), `IMAJ_ACCESS_PKG` (autorización y consultas con alcance) y `IMAJ_APP_PKG` (CRUD, gestores y funciones de negocio), además de triggers de secuencia/auditoría en las 16 tablas.
 
 Los reportes de ingresos usan la fecha de auditoría de cada pago, porque el esquema de pagos no tiene una columna de fecha. La tabla `IMAJ_AUDITORIA` conserva tabla, operación, ID, usuario de aplicación y fecha, pero no copia datos clínicos.
 

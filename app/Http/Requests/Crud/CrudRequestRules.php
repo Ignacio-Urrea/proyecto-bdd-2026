@@ -15,6 +15,7 @@ class CrudRequestRules
         ],
         'prestaciones' => [
             'store' => [
+                'CLINICA_ID' => ['required', 'integer'],
                 'NOMBRE' => ['required', 'string', 'max:32'],
                 'PRECIO_BASE' => ['required', 'numeric', 'min:0'],
                 'HABILITADA' => ['required', 'integer', 'in:0,1'],

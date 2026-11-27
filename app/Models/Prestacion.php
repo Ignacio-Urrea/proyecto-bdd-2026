@@ -17,7 +17,7 @@ class Prestacion extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['NOMBRE', 'PRECIO_BASE', 'HABILITADA'];
+    protected $fillable = ['CLINICA_ID', 'NOMBRE', 'PRECIO_BASE', 'HABILITADA'];
 
     protected function oracleSequence(): string
     {
@@ -27,5 +27,10 @@ class Prestacion extends Model
     public function detalles()
     {
         return $this->hasMany(DetallePrestacion::class, 'PRESTACION_ID');
+    }
+
+    public function clinica()
+    {
+        return $this->belongsTo(Clinica::class, 'CLINICA_ID');
     }
 }

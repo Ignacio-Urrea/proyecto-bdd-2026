@@ -53,36 +53,27 @@ class OracleCrudService
     {
         $table = $this->assertTable($table);
         $rows = DB::connection()->executeProcedureWithCursor(
-            'IMAJ_APP_PKG.LIST_ROWS',
-            ['p_table' => $table],
+            'IMAJ_ACCESS_PKG.LIST_ROWS',
+            ['p_table' => $table, 'p_user_id' => $this->userId()],
             ':p_cursor',
         );
-        $rows = $this->normalizeColumnNames($rows);
-        $scope = app(ImajAccessScope::class);
 
-        if ($scope->ids($table) !== null) {
-            $rows = array_values(array_filter(
-                $rows,
-                static fn (object $row): bool => $scope->allows($table, (int) ($row->ID ?? 0)),
-            ));
-        }
-
-        return $this->hideCredentials($table, $rows);
+        return $this->hideCredentials($table, $this->normalizeColumnNames($rows));
     }
 
     public function find(string $table, int $id): ?object
     {
         $table = $this->assertTable($table);
         $rows = DB::connection()->executeProcedureWithCursor(
-            'IMAJ_APP_PKG.FIND_ROW',
-            ['p_table' => $table, 'p_id' => $id],
+            'IMAJ_ACCESS_PKG.FIND_ROW',
+            ['p_table' => $table, 'p_id' => $id, 'p_user_id' => $this->userId()],
             ':p_cursor',
         );
 
         $rows = $this->normalizeColumnNames($rows);
         $row = $rows[0] ?? null;
 
-        if ($row === null || ! app(ImajAccessScope::class)->allows($table, (int) ($row->ID ?? 0))) {
+        if ($row === null) {
             return null;
         }
 
@@ -95,37 +86,53 @@ class OracleCrudService
         ?string $dateFrom = null,
         ?string $dateTo = null,
     ): LengthAwarePaginator {
-        $rows = collect($this->rows($table));
+        $table = $this->assertTable($table);
 
-        $dateColumn = match (strtoupper($table)) {
-            'IMAJ_ORDENES' => 'FECHA_CITA',
-            'IMAJ_EXAMENES' => 'FECHA_SOLICITUD',
-            default => null,
-        };
-
-        if ($dateColumn !== null && ($dateFrom !== null || $dateTo !== null)) {
-            $rows = $rows->filter(function (object $row) use ($dateColumn, $dateFrom, $dateTo): bool {
-                $rawDate = $row->{$dateColumn} ?? '';
-                $rawDate = $rawDate instanceof \DateTimeInterface
-                    ? $rawDate->format('Y-m-d')
-                    : trim((string) $rawDate);
-
-                if (! preg_match('/^\d{4}-\d{2}-\d{2}/', $rawDate, $matches)) {
-                    return false;
-                }
-
-                $date = $matches[0];
-
-                return ($dateFrom === null || $date >= $dateFrom)
-                    && ($dateTo === null || $date <= $dateTo);
-            })->values();
+        if ($perPage < 1 || $perPage > 100) {
+            throw new InvalidArgumentException('La paginación debe solicitar entre 1 y 100 filas.');
         }
 
         $page = LengthAwarePaginator::resolveCurrentPage();
+        $connection = DB::connection();
+        $pageRows = $connection->executeProcedureWithCursor(
+            'IMAJ_ACCESS_PKG.LIST_ROWS_PAGE',
+            [
+                'p_table' => $table,
+                'p_date_from' => $dateFrom,
+                'p_date_to' => $dateTo,
+                'p_user_id' => $this->userId(),
+                'p_offset' => ($page - 1) * $perPage,
+                'p_limit' => $perPage,
+            ],
+            ':p_cursor',
+        );
+        $rows = $this->normalizeColumnNames($pageRows);
+
+        if ($rows === []) {
+            $countRows = $connection->executeProcedureWithCursor(
+                'IMAJ_ACCESS_PKG.COUNT_ROWS_PAGE',
+                [
+                    'p_table' => $table,
+                    'p_date_from' => $dateFrom,
+                    'p_date_to' => $dateTo,
+                    'p_user_id' => $this->userId(),
+                ],
+                ':p_cursor',
+            );
+            $total = (int) ($this->normalizeColumnNames($countRows)[0]->TOTAL_COUNT ?? 0);
+        } else {
+            $total = (int) ($rows[0]->TOTAL_COUNT ?? 0);
+
+            foreach ($rows as $row) {
+                unset($row->TOTAL_COUNT);
+            }
+        }
+
+        $rows = $this->hideCredentials($table, $rows);
 
         return new LengthAwarePaginator(
-            $rows->forPage($page, $perPage)->values(),
-            $rows->count(),
+            $rows,
+            $total,
             $perPage,
             $page,
             ['path' => LengthAwarePaginator::resolveCurrentPath(), 'query' => request()->query()],
@@ -138,13 +145,13 @@ class OracleCrudService
     public function insert(string $table, array $data): void
     {
         $table = $this->assertTable($table);
-        app(ImajAccessScope::class)->assertCanCreate($table, $data);
         $payload = $this->payload($table, $data);
 
         $this->mutate(
-            fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.INSERT_ROW', [
+            fn () => DB::connection()->executeProcedure('IMAJ_ACCESS_PKG.INSERT_ROW', [
                 'p_table' => $table,
                 'p_payload' => $payload,
+                'p_user_id' => $this->userId(),
             ]),
             'insert',
             $table,
@@ -157,14 +164,14 @@ class OracleCrudService
     public function update(string $table, int $id, array $data): void
     {
         $table = $this->assertTable($table);
-        app(ImajAccessScope::class)->assertCanUpdate($table, $id, $data);
         $payload = $this->payload($table, $data);
 
         $this->mutate(
-            fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.UPDATE_ROW', [
+            fn () => DB::connection()->executeProcedure('IMAJ_ACCESS_PKG.UPDATE_ROW', [
                 'p_table' => $table,
                 'p_id' => $id,
                 'p_payload' => $payload,
+                'p_user_id' => $this->userId(),
             ]),
             'update',
             $table,
@@ -174,12 +181,12 @@ class OracleCrudService
     public function delete(string $table, int $id): void
     {
         $table = $this->assertTable($table);
-        app(ImajAccessScope::class)->assertCanDelete($table, $id);
 
         $this->mutate(
-            fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.DELETE_ROW', [
+            fn () => DB::connection()->executeProcedure('IMAJ_ACCESS_PKG.DELETE_ROW', [
                 'p_table' => $table,
                 'p_id' => $id,
+                'p_user_id' => $this->userId(),
             ]),
             'delete',
             $table,
@@ -193,18 +200,30 @@ class OracleCrudService
             ->all();
     }
 
+    public function prestationsForOrder(int $orderId): array
+    {
+        $rows = DB::connection()->executeProcedureWithCursor(
+            'IMAJ_ACCESS_PKG.LIST_ORDER_PRESTATIONS',
+            ['p_order_id' => $orderId, 'p_user_id' => $this->userId()],
+            ':p_cursor',
+        );
+
+        return collect($this->normalizeColumnNames($rows))
+            ->mapWithKeys(fn (object $row): array => [$row->ID => $row->NOMBRE])
+            ->all();
+    }
+
     public function radiologistOptions(): array
     {
-        $query = DB::table('IMAJ_USUARIOS as u')
-            ->join('IMAJ_ROLES as r', 'r.ID', '=', 'u.ROL_ID')
-            ->whereRaw('UPPER(r.NOMBRE_ROL) = ?', ['RADIOLOGO'])
-            ->orderBy('u.NOMBRE_USUARIO');
+        $rows = DB::connection()->executeProcedureWithCursor(
+            'IMAJ_ACCESS_PKG.LIST_RADIOLOGISTS',
+            ['p_user_id' => $this->userId()],
+            ':p_cursor',
+        );
 
-        if (strtoupper((string) Auth::user()?->rol?->NOMBRE_ROL) === 'RADIOLOGO') {
-            $query->where('u.ID', Auth::id());
-        }
-
-        return $query->pluck('u.NOMBRE_USUARIO', 'u.ID')->all();
+        return collect($this->normalizeColumnNames($rows))
+            ->mapWithKeys(fn (object $row): array => [$row->ID => $row->NOMBRE_USUARIO])
+            ->all();
     }
 
     public function runManager(string $procedure, array $bindings): void
@@ -213,26 +232,10 @@ class OracleCrudService
             throw new InvalidArgumentException('Gestor PL/SQL no habilitado.');
         }
 
-        $scope = app(ImajAccessScope::class);
-
-        $referenceBindings = match ($procedure) {
-            'CREATE_ORDER' => [
-                'IMAJ_PACIENTES' => $bindings['p_patient_id'] ?? null,
-                'IMAJ_SUCURSALES' => $bindings['p_branch_id'] ?? null,
-            ],
-            'BUILD_BUDGET' => ['IMAJ_ORDENES' => $bindings['p_order_id'] ?? null],
-            'REGISTER_PAYMENT' => ['IMAJ_PRESUPUESTOS' => $bindings['p_budget_id'] ?? null],
-            'COMPLETE_EXAM', 'PUBLISH_REPORT' => ['IMAJ_EXAMENES' => $bindings['p_exam_id'] ?? null],
-        };
-
-        foreach ($referenceBindings as $table => $id) {
-            if ($id !== null) {
-                $scope->assertCanReference($table, (int) $id);
-            }
-        }
+        $bindings['p_user_id'] = $this->userId();
 
         $this->mutate(
-            fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.'.$procedure, $bindings),
+            fn () => DB::connection()->executeProcedure('IMAJ_ACCESS_PKG.'.$procedure, $bindings),
             'manager',
             $procedure,
         );
@@ -247,57 +250,13 @@ class OracleCrudService
             throw new InvalidArgumentException('Reporte PL/SQL no habilitado.');
         }
 
-        $scope = app(ImajAccessScope::class);
-
-        if ($scope->restricted()) {
-            return $this->scopedReport($procedure, $scope);
-        }
-
         $rows = DB::connection()->executeProcedureWithCursor(
-            'IMAJ_APP_PKG.'.$procedure,
-            [],
+            'IMAJ_ACCESS_PKG.'.$procedure,
+            ['p_user_id' => $this->userId()],
             ':p_cursor',
         );
 
         return $this->normalizeColumnNames($rows);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function scopedReport(string $procedure, ImajAccessScope $scope): array
-    {
-        return match ($procedure) {
-            'REPORT_ORDERS' => DB::table('IMAJ_ORDENES as o')
-                ->join('IMAJ_SUCURSALES as s', 's.ID', '=', 'o.SUCURSAL_ID')
-                ->when($scope->ids('IMAJ_ORDENES') !== null, fn ($query) => $query->whereIn('o.ID', $scope->ids('IMAJ_ORDENES')))
-                ->select('s.ID as SUCURSAL_ID', 's.CORREO_SUCURSAL', 'o.ESTADO')
-                ->selectRaw('COUNT(*) AS TOTAL_ORDENES')
-                ->groupBy('s.ID', 's.CORREO_SUCURSAL', 'o.ESTADO')
-                ->orderBy('s.ID')
-                ->orderBy('o.ESTADO')
-                ->get()
-                ->all(),
-            'REPORT_REVENUE' => DB::table('IMAJ_AUDITORIA as a')
-                ->join('IMAJ_PAGOS as p', 'p.ID', '=', 'a.REGISTRO_ID')
-                ->when($scope->ids('IMAJ_PAGOS') !== null, fn ($query) => $query->whereIn('p.ID', $scope->ids('IMAJ_PAGOS')))
-                ->where('a.TABLA', 'IMAJ_PAGOS')
-                ->where('a.OPERACION', 'INSERT')
-                ->selectRaw("TO_CHAR(a.FECHA_EVENTO, 'YYYY-MM') AS PERIODO, SUM(p.MONTO) AS INGRESOS, COUNT(*) AS TOTAL_PAGOS")
-                ->groupByRaw("TO_CHAR(a.FECHA_EVENTO, 'YYYY-MM')")
-                ->orderBy('PERIODO')
-                ->get()
-                ->all(),
-            'REPORT_EXAMS' => DB::table('IMAJ_EXAMENES')
-                ->when($scope->ids('IMAJ_EXAMENES') !== null, fn ($query) => $query->whereIn('ID', $scope->ids('IMAJ_EXAMENES')))
-                ->select('URGENCIA', 'ESTADO')
-                ->selectRaw('COUNT(*) AS TOTAL_EXAMENES')
-                ->groupBy('URGENCIA', 'ESTADO')
-                ->orderBy('URGENCIA')
-                ->orderBy('ESTADO')
-                ->get()
-                ->all(),
-        };
     }
 
     /**
@@ -345,6 +304,13 @@ class OracleCrudService
         return $table;
     }
 
+    private function userId(): ?int
+    {
+        $userId = Auth::id();
+
+        return $userId === null ? null : (int) $userId;
+    }
+
     private function normalizeColumnNames(array $rows): array
     {
         return array_map(function (object $row): object {
@@ -365,6 +331,10 @@ class OracleCrudService
             DB::transaction($operation);
         } catch (PDOException $exception) {
             $message = $exception->getMessage();
+
+            if (str_contains($message, 'ORA-20021')) {
+                abort(403, 'No tienes permiso para operar sobre estos datos.');
+            }
 
             if (str_contains($message, 'ORA-00001')) {
                 throw ValidationException::withMessages(['registro' => 'Ya existe un registro con esos datos.']);

@@ -579,7 +579,7 @@
                                 $name     = $field['name'];
                                 $type     = $field['type'] ?? 'text';
                                 $multiple = !empty($field['multiple']);
-                                $selected = old($name, $multiple ? [] : '');
+                                $selected = old($name, $field['value'] ?? ($multiple ? [] : ''));
 
                                 $isNaturalFull = ($type === 'textarea') || ($type === 'select' && $multiple);
                                 if ($isNaturalFull) {
@@ -661,7 +661,7 @@
                                             @empty
                                                 <div class="text-center py-4 w-100" style="grid-column: 1 / -1; color: var(--vv-muted); font-size: 1.1rem;">
                                                     <i class="bi bi-inbox d-block fs-2 mb-1"></i>
-                                                    No hay opciones disponibles en el catálogo.
+                                                    {{ $field['emptyMessage'] ?? 'No hay opciones disponibles en el catálogo.' }}
                                                 </div>
                                             @endforelse
 
@@ -686,6 +686,7 @@
                                     <select class="form-select @error($name) is-invalid @enderror"
                                             id="{{ $name }}"
                                             name="{{ $name }}"
+                                            @if(!empty($field['reloadQuery'])) data-reload-query="{{ $name }}" @endif
                                             required>
                                         <option value="">Selecciona una opción</option>
                                         @foreach(($field['options'] ?? []) as $value => $label)
@@ -745,6 +746,21 @@
         document.title = @json($title);
 
         document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('[data-reload-query]').forEach((select) => {
+                select.addEventListener('change', function () {
+                    const url = new URL(window.location.href);
+                    const queryKey = this.dataset.reloadQuery;
+
+                    if (this.value) {
+                        url.searchParams.set(queryKey, this.value);
+                    } else {
+                        url.searchParams.delete(queryKey);
+                    }
+
+                    window.location.assign(url.toString());
+                });
+            });
+
             const formatCLP = (n) => '$ ' + n.toLocaleString('es-CL');
 
             document.querySelectorAll('[data-vv-multi]').forEach((box) => {
