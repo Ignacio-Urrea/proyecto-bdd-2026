@@ -174,13 +174,14 @@ END IMAJ_PUBLISH_REPORT;
 
 -- Procedimiento integral de mantenimiento de usuarios.
 -- Operación I: insertar. U: actualizar. D: eliminar.
+-- P_CONTRASENA_HASH debe contener un hash generado por la aplicación.
 -- Incluye bloqueo de concurrencia, COMMIT y control de excepciones.
 
 CREATE OR REPLACE PROCEDURE IMAJ_IUD_USUARIO(
     P_OPERACION IN VARCHAR2,
     P_ID IN NUMBER,
     P_NOMBRE_USUARIO IN VARCHAR2 DEFAULT NULL,
-    P_PASSWORD_HASH IN VARCHAR2 DEFAULT NULL,
+    P_CONTRASENA_HASH IN VARCHAR2 DEFAULT NULL,
     P_ROL_ID IN NUMBER DEFAULT NULL
 ) IS
     V_OPERACION VARCHAR2(1) := UPPER(TRIM(P_OPERACION));
@@ -196,16 +197,16 @@ BEGIN
 
     IF V_OPERACION = 'I' THEN
         INSERT INTO IMAJ_USUARIOS
-            (ID, NOMBRE_USUARIO, PASSWORD_HASH, ROL_ID)
+            (ID, NOMBRE_USUARIO, CONTRASEÑA, ROL_ID)
         VALUES
             (SEQ_IMAJ_USUARIOS.NEXTVAL,
-             P_NOMBRE_USUARIO, P_PASSWORD_HASH, P_ROL_ID);
+             P_NOMBRE_USUARIO, P_CONTRASENA_HASH, P_ROL_ID);
 
     ELSIF V_OPERACION = 'U' THEN
         UPDATE IMAJ_USUARIOS
         SET NOMBRE_USUARIO = P_NOMBRE_USUARIO,
-            PASSWORD_HASH = NVL(P_PASSWORD_HASH,
-                (SELECT PASSWORD_HASH
+            CONTRASEÑA = NVL(P_CONTRASENA_HASH,
+                (SELECT CONTRASEÑA
                  FROM IMAJ_USUARIOS
                  WHERE ID = P_ID)),
             ROL_ID = P_ROL_ID

@@ -17,7 +17,7 @@ class Examen extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['ORDEN_ID', 'URGENCIA', 'FECHA_SOLICITUD', 'ESTADO'];
+    protected $fillable = ['ORDEN_ID', 'RADIOLOGO_ID', 'URGENCIA', 'FECHA_SOLICITUD', 'ESTADO'];
 
     protected function oracleSequence(): string
     {
@@ -27,6 +27,11 @@ class Examen extends Model
     public function orden()
     {
         return $this->belongsTo(Orden::class, 'ORDEN_ID');
+    }
+
+    public function radiologo()
+    {
+        return $this->belongsTo(Usuario::class, 'RADIOLOGO_ID');
     }
 
     public function informes()

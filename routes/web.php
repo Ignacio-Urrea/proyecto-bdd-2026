@@ -19,6 +19,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\SucursalController;
 use App\Http\Controllers\UsuarioController;
+use App\Services\ImajAccessScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -33,25 +34,34 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', function () {
         $hoy = now()->toDateString();
+        $scope = app(ImajAccessScope::class);
+        $orderIds = $scope->ids('IMAJ_ORDENES');
+        $examIds = $scope->ids('IMAJ_EXAMENES');
+        $paymentIds = $scope->ids('IMAJ_PAGOS');
 
         $ordenesHoy = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
             ->whereDate('FECHA_CITA', $hoy)
             ->count();
 
         $pendientes = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
             ->whereDate('FECHA_CITA', $hoy)
             ->where('EJECUTADA', 0)
             ->count();
 
         $ejecutadas = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
             ->whereDate('FECHA_CITA', $hoy)
             ->where('EJECUTADA', 1)
             ->count();
 
         $ingresosMes = DB::table('IMAJ_PAGOS')
+            ->when($paymentIds !== null, fn ($query) => $query->whereIn('ID', $paymentIds))
             ->sum('MONTO');
 
         $urgentesCnt = DB::table('IMAJ_EXAMENES')
+            ->when($examIds !== null, fn ($query) => $query->whereIn('ID', $examIds))
             ->where('URGENCIA', 1)
             ->where('ESTADO', '<>', 2)
             ->count();
@@ -59,7 +69,7 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
         $kpis = [
             ['label' => 'Órdenes de hoy',          'value' => $ordenesHoy,                                      'tone' => 'primary', 'go' => 'rep:orden'],
             ['label' => 'Pendientes / ejecutadas', 'value' => "{$pendientes} / {$ejecutadas}",                 'tone' => 'warning', 'go' => 'rep:orden'],
-            ['label' => 'Ingresos del mes',        'value' => '$ ' . number_format($ingresosMes, 0, ',', '.'), 'tone' => 'success', 'go' => 'rep:ingreso'],
+            ['label' => 'Ingresos del mes',        'value' => '$ '.number_format($ingresosMes, 0, ',', '.'), 'tone' => 'success', 'go' => 'rep:ingreso'],
             ['label' => 'Exámenes urgentes',       'value' => $urgentesCnt,                                     'tone' => 'danger',  'go' => 'rep:examen'],
         ];
 
@@ -69,6 +79,7 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
             ->leftJoin('IMAJ_PRESUPUESTOS as pr', 'pr.ORDEN_ID', '=', 'o.ID')
             ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
             ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('o.ID', $orderIds))
             ->select(
                 'o.ID as id',
                 DB::raw("'ORD-' || o.ID as orden"),
@@ -76,7 +87,7 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
                 DB::raw("NVL(prest.NOMBRE, 'Examen radiológico') as examen"),
                 DB::raw("LPAD(o.HORA_CITA, 2, '0') || ':00' as hora"),
                 DB::raw("CASE o.ESTADO WHEN 3 THEN 'EJECUTADA' WHEN 2 THEN 'EN_PROCESO' ELSE 'PENDIENTE' END as estado"),
-                DB::raw("NVL(e.URGENCIA, 0) as urgente")
+                DB::raw('NVL(e.URGENCIA, 0) as urgente')
             )
             ->orderByDesc('urgente')
             ->orderBy('o.ID')

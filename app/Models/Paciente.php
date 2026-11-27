@@ -17,16 +17,16 @@ class Paciente extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['CLINICA_ID', 'FECHA_NACIMIENTO', 'NOMBRE', 'APELLIDO_P', 'APELLIDO_M', 'RUT', 'TELEFONO'];
+    protected $fillable = ['SUCURSAL_ID', 'FECHA_NACIMIENTO', 'NOMBRE', 'APELLIDO_P', 'APELLIDO_M', 'RUT', 'TELEFONO'];
 
     protected function oracleSequence(): string
     {
         return 'SEQ_IMAJ_PACIENTES';
     }
 
-    public function clinica()
+    public function sucursal()
     {
-        return $this->belongsTo(Clinica::class, 'CLINICA_ID');
+        return $this->belongsTo(Sucursal::class, 'SUCURSAL_ID');
     }
 
     public function ordenes()

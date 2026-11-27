@@ -57,8 +57,17 @@ class OracleCrudService
             ['p_table' => $table],
             ':p_cursor',
         );
+        $rows = $this->normalizeColumnNames($rows);
+        $scope = app(ImajAccessScope::class);
 
-        return $this->hideCredentials($table, $this->normalizeColumnNames($rows));
+        if ($scope->ids($table) !== null) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn (object $row): bool => $scope->allows($table, (int) ($row->ID ?? 0)),
+            ));
+        }
+
+        return $this->hideCredentials($table, $rows);
     }
 
     public function find(string $table, int $id): ?object
@@ -70,7 +79,14 @@ class OracleCrudService
             ':p_cursor',
         );
 
-        return $this->hideCredentials($table, $this->normalizeColumnNames($rows))[0] ?? null;
+        $rows = $this->normalizeColumnNames($rows);
+        $row = $rows[0] ?? null;
+
+        if ($row === null || ! app(ImajAccessScope::class)->allows($table, (int) ($row->ID ?? 0))) {
+            return null;
+        }
+
+        return $this->hideCredentials($table, [$row])[0];
     }
 
     public function paginate(string $table, int $perPage = 20): LengthAwarePaginator
@@ -93,6 +109,7 @@ class OracleCrudService
     public function insert(string $table, array $data): void
     {
         $table = $this->assertTable($table);
+        app(ImajAccessScope::class)->assertCanCreate($table, $data);
         $payload = $this->payload($table, $data);
 
         $this->mutate(
@@ -111,6 +128,7 @@ class OracleCrudService
     public function update(string $table, int $id, array $data): void
     {
         $table = $this->assertTable($table);
+        app(ImajAccessScope::class)->assertCanUpdate($table, $id, $data);
         $payload = $this->payload($table, $data);
 
         $this->mutate(
@@ -127,6 +145,7 @@ class OracleCrudService
     public function delete(string $table, int $id): void
     {
         $table = $this->assertTable($table);
+        app(ImajAccessScope::class)->assertCanDelete($table, $id);
 
         $this->mutate(
             fn () => DB::connection()->executeProcedure('IMAJ_APP_PKG.DELETE_ROW', [
@@ -145,10 +164,42 @@ class OracleCrudService
             ->all();
     }
 
+    public function radiologistOptions(): array
+    {
+        $query = DB::table('IMAJ_USUARIOS as u')
+            ->join('IMAJ_ROLES as r', 'r.ID', '=', 'u.ROL_ID')
+            ->whereRaw('UPPER(r.NOMBRE_ROL) = ?', ['RADIOLOGO'])
+            ->orderBy('u.NOMBRE_USUARIO');
+
+        if (strtoupper((string) Auth::user()?->rol?->NOMBRE_ROL) === 'RADIOLOGO') {
+            $query->where('u.ID', Auth::id());
+        }
+
+        return $query->pluck('u.NOMBRE_USUARIO', 'u.ID')->all();
+    }
+
     public function runManager(string $procedure, array $bindings): void
     {
         if (! in_array($procedure, self::MANAGERS, true)) {
             throw new InvalidArgumentException('Gestor PL/SQL no habilitado.');
+        }
+
+        $scope = app(ImajAccessScope::class);
+
+        $referenceBindings = match ($procedure) {
+            'CREATE_ORDER' => [
+                'IMAJ_PACIENTES' => $bindings['p_patient_id'] ?? null,
+                'IMAJ_SUCURSALES' => $bindings['p_branch_id'] ?? null,
+            ],
+            'BUILD_BUDGET' => ['IMAJ_ORDENES' => $bindings['p_order_id'] ?? null],
+            'REGISTER_PAYMENT' => ['IMAJ_PRESUPUESTOS' => $bindings['p_budget_id'] ?? null],
+            'COMPLETE_EXAM', 'PUBLISH_REPORT' => ['IMAJ_EXAMENES' => $bindings['p_exam_id'] ?? null],
+        };
+
+        foreach ($referenceBindings as $table => $id) {
+            if ($id !== null) {
+                $scope->assertCanReference($table, (int) $id);
+            }
         }
 
         $this->mutate(
@@ -167,6 +218,12 @@ class OracleCrudService
             throw new InvalidArgumentException('Reporte PL/SQL no habilitado.');
         }
 
+        $scope = app(ImajAccessScope::class);
+
+        if ($scope->restricted()) {
+            return $this->scopedReport($procedure, $scope);
+        }
+
         return DB::connection()->executeProcedureWithCursor(
             'IMAJ_APP_PKG.'.$procedure,
             [],
@@ -175,12 +232,50 @@ class OracleCrudService
     }
 
     /**
+     * @return array<int, object>
+     */
+    private function scopedReport(string $procedure, ImajAccessScope $scope): array
+    {
+        return match ($procedure) {
+            'REPORT_ORDERS' => DB::table('IMAJ_ORDENES as o')
+                ->join('IMAJ_SUCURSALES as s', 's.ID', '=', 'o.SUCURSAL_ID')
+                ->when($scope->ids('IMAJ_ORDENES') !== null, fn ($query) => $query->whereIn('o.ID', $scope->ids('IMAJ_ORDENES')))
+                ->select('s.ID as SUCURSAL_ID', 's.CORREO_SUCURSAL', 'o.ESTADO')
+                ->selectRaw('COUNT(*) AS TOTAL_ORDENES')
+                ->groupBy('s.ID', 's.CORREO_SUCURSAL', 'o.ESTADO')
+                ->orderBy('s.ID')
+                ->orderBy('o.ESTADO')
+                ->get()
+                ->all(),
+            'REPORT_REVENUE' => DB::table('IMAJ_AUDITORIA as a')
+                ->join('IMAJ_PAGOS as p', 'p.ID', '=', 'a.REGISTRO_ID')
+                ->when($scope->ids('IMAJ_PAGOS') !== null, fn ($query) => $query->whereIn('p.ID', $scope->ids('IMAJ_PAGOS')))
+                ->where('a.TABLA', 'IMAJ_PAGOS')
+                ->where('a.OPERACION', 'INSERT')
+                ->selectRaw("TO_CHAR(a.FECHA_EVENTO, 'YYYY-MM') AS PERIODO, SUM(p.MONTO) AS INGRESOS, COUNT(*) AS TOTAL_PAGOS")
+                ->groupByRaw("TO_CHAR(a.FECHA_EVENTO, 'YYYY-MM')")
+                ->orderBy('PERIODO')
+                ->get()
+                ->all(),
+            'REPORT_EXAMS' => DB::table('IMAJ_EXAMENES')
+                ->when($scope->ids('IMAJ_EXAMENES') !== null, fn ($query) => $query->whereIn('ID', $scope->ids('IMAJ_EXAMENES')))
+                ->select('URGENCIA', 'ESTADO')
+                ->selectRaw('COUNT(*) AS TOTAL_EXAMENES')
+                ->groupBy('URGENCIA', 'ESTADO')
+                ->orderBy('URGENCIA')
+                ->orderBy('ESTADO')
+                ->get()
+                ->all(),
+        };
+    }
+
+    /**
      * @throws JsonException
      */
     private function payload(string $table, array $data): string
     {
-        if (strtoupper($table) === 'IMAJ_USUARIOS' && array_key_exists('PASSWORD_HASH', $data)) {
-            $data['PASSWORD_HASH'] = (string) $data['PASSWORD_HASH'];
+        if (strtoupper($table) === 'IMAJ_USUARIOS' && array_key_exists('CONTRASEÑA', $data)) {
+            $data['CONTRASEÑA'] = (string) $data['CONTRASEÑA'];
         }
 
         return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
@@ -217,7 +312,7 @@ class OracleCrudService
     private function normalizeColumnNames(array $rows): array
     {
         return array_map(function (object $row): object {
-            $normalizedRow = new \stdClass();
+            $normalizedRow = new \stdClass;
 
             foreach ($row as $column => $value) {
                 $normalizedColumn = strtoupper($column);

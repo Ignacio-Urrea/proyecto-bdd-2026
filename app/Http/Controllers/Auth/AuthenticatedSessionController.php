@@ -41,13 +41,8 @@ class AuthenticatedSessionController extends Controller
 
         if ($user) {
             $authPassword = $user->getAuthPassword();
-
-            if ($authPassword !== '' && Hash::check($credentials['password'], $authPassword)) {
-                $validPassword = true;
-            } elseif ($user->CONTRASEÑA === $credentials['password']) {
-                $validPassword = true;
-                $user->update(['PASSWORD_HASH' => Hash::make($credentials['password'])]);
-            }
+            $validPassword = $authPassword !== ''
+                && Hash::check($credentials['password'], $authPassword);
         }
 
         if (! $user || ! $validPassword) {

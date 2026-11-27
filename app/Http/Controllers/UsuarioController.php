@@ -15,13 +15,13 @@ class UsuarioController extends CrudController
 
     protected array $fields = [
         ['name' => 'NOMBRE_USUARIO', 'label' => 'Nombre de usuario', 'type' => 'text'],
-        ['name' => 'PASSWORD_HASH', 'label' => 'Contraseña', 'type' => 'password', 'show_in_index' => false, 'show_in_view' => false, 'placeholder' => 'Deja vacío para conservarla'],
+        ['name' => 'CONTRASEÑA', 'label' => 'Contraseña', 'type' => 'password', 'show_in_index' => false, 'show_in_view' => false, 'placeholder' => 'Deja vacío para conservarla'],
         ['name' => 'ROL_ID', 'label' => 'Rol', 'type' => 'select', 'options' => [self::class, 'roleOptions']],
     ];
 
-    protected array $hashFields = ['PASSWORD_HASH'];
+    protected array $hashFields = ['CONTRASEÑA'];
 
-    protected array $preserveOnEmpty = ['PASSWORD_HASH'];
+    protected array $preserveOnEmpty = ['CONTRASEÑA'];
 
     public static function roleOptions(): array
     {

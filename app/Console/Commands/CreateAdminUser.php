@@ -41,7 +41,7 @@ class CreateAdminUser extends Command
 
         Usuario::query()->create([
             'NOMBRE_USUARIO' => $username,
-            'PASSWORD_HASH' => $password,
+            'CONTRASEÑA' => $password,
             'ROL_ID' => $role->ID,
         ]);
 
