@@ -2,6 +2,7 @@
     $title     = $title ?? 'Reporte';
     $columns   = $columns ?? [];
     $rows      = $rows ?? collect();
+    $statusLabels = $statusLabels ?? [];
     $totalRows = is_countable($rows) ? count($rows) : (method_exists($rows, 'count') ? $rows->count() : 0);
 @endphp
 
@@ -375,6 +376,9 @@
                                 foreach ($columns as $cKey => $cLabel) {
                                     $val = is_object($row) ? ($row->{$cKey} ?? '') : ($row[$cKey] ?? '');
                                     $searchBlob .= ' ' . (string) $val;
+                                    if (strtoupper((string) $cKey) === 'ESTADO' && $val !== '') {
+                                        $searchBlob .= ' ' . (string) ($statusLabels[(string) $val] ?? '');
+                                    }
                                 }
                             @endphp
                             <tr data-vv-report-row data-search="{{ mb_strtolower(trim($searchBlob)) }}">
@@ -382,12 +386,15 @@
                                     @php
                                         $cellVal = is_object($row) ? ($row->{$key} ?? null) : ($row[$key] ?? null);
                                         $isIdCol = strtoupper((string) $key) === 'ID';
+                                        $displayVal = strtoupper((string) $key) === 'ESTADO' && $cellVal !== null
+                                            ? ($statusLabels[(string) $cellVal] ?? $cellVal)
+                                            : $cellVal;
                                     @endphp
                                     <td>
                                         @if($isIdCol && $cellVal !== null && $cellVal !== '')
                                             <span class="vv-id-chip">#{{ $cellVal }}</span>
                                         @else
-                                            {{ $cellVal ?? '—' }}
+                                            {{ $displayVal ?? '—' }}
                                         @endif
                                     </td>
                                 @endforeach

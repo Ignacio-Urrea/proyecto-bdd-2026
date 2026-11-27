@@ -207,17 +207,38 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_APP_PKG AS
         V_UPDATE_SELECT_LIST VARCHAR2(4000);
         V_JSON_COLUMNS VARCHAR2(4000);
         V_SQL VARCHAR2(32767);
+        V_COLUMN VARCHAR2(128);
+        V_INDEX PLS_INTEGER := 1;
     BEGIN
         GET_METADATA(P_TABLE, V_TABLE, V_SEQUENCE, V_COLUMNS, V_SELECT_LIST, V_UPDATE_SELECT_LIST, V_JSON_COLUMNS);
-        V_SQL := 'UPDATE ' || V_TABLE || ' SET (' || V_COLUMNS || ') = (SELECT ' ||
-            V_UPDATE_SELECT_LIST || ' FROM JSON_TABLE(:payload, ''$'' COLUMNS (' ||
-            V_JSON_COLUMNS || ')) j) WHERE ID = :record_id';
+        V_UPDATE_SELECT_LIST := NULL;
 
-        IF V_TABLE = 'IMAJ_USUARIOS' THEN
-            EXECUTE IMMEDIATE V_SQL USING P_PAYLOAD, P_ID, P_ID;
-        ELSE
-            EXECUTE IMMEDIATE V_SQL USING P_PAYLOAD, P_ID;
-        END IF;
+        LOOP
+            V_COLUMN := TRIM(REGEXP_SUBSTR(V_COLUMNS, '[^,]+', 1, V_INDEX));
+            EXIT WHEN V_COLUMN IS NULL;
+
+            IF V_INDEX > 1 THEN
+                V_UPDATE_SELECT_LIST := V_UPDATE_SELECT_LIST || ', ';
+            END IF;
+
+            IF (V_TABLE = 'IMAJ_PACIENTES' AND V_COLUMN = 'FECHA_NACIMIENTO')
+                OR (V_TABLE = 'IMAJ_ORDENES' AND V_COLUMN = 'FECHA_CITA')
+                OR (V_TABLE = 'IMAJ_EXAMENES' AND V_COLUMN = 'FECHA_SOLICITUD') THEN
+                V_UPDATE_SELECT_LIST := V_UPDATE_SELECT_LIST ||
+                    'NVL(TO_DATE(j.' || V_COLUMN || ', ''YYYY-MM-DD''), t.' || V_COLUMN || ')';
+            ELSE
+                V_UPDATE_SELECT_LIST := V_UPDATE_SELECT_LIST ||
+                    'NVL(j.' || V_COLUMN || ', t.' || V_COLUMN || ')';
+            END IF;
+
+            V_INDEX := V_INDEX + 1;
+        END LOOP;
+
+        V_SQL := 'UPDATE ' || V_TABLE || ' t SET (' || V_COLUMNS || ') = (SELECT ' ||
+            V_UPDATE_SELECT_LIST || ' FROM JSON_TABLE(:payload, ''$'' COLUMNS (' ||
+            V_JSON_COLUMNS || ')) j WHERE t.ID = :record_id) WHERE t.ID = :record_id';
+
+        EXECUTE IMMEDIATE V_SQL USING P_PAYLOAD, P_ID, P_ID;
 
         IF SQL%ROWCOUNT = 0 THEN
             RAISE_APPLICATION_ERROR(-20002, 'Registro no encontrado.');

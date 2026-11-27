@@ -68,7 +68,7 @@ class ManagerController extends Controller
     {
         return $this->form('Actualizar examen', 'gestores.examenes.store', [
             ['name' => 'EXAMEN_ID', 'label' => 'Examen', 'type' => 'select', 'options' => fn () => app(OracleCrudService::class)->options('IMAJ_EXAMENES', 'ID')],
-            ['name' => 'ESTADO', 'label' => 'Nuevo estado', 'type' => 'number'],
+            ['name' => 'ESTADO', 'label' => 'Nuevo estado', 'type' => 'select', 'options' => config('imaj.status_labels.examenes')],
             ['name' => 'EJECUTADA', 'label' => 'Orden ejecutada', 'type' => 'select', 'options' => [1 => 'Sí', 0 => 'No']],
         ]);
     }
