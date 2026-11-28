@@ -345,6 +345,8 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_APP_PKG AS
                 V_UPDATE_SELECT_LIST := V_UPDATE_SELECT_LIST || ', ';
             END IF;
 
+            V_UPDATE_SELECT_LIST := V_UPDATE_SELECT_LIST || 't.' || V_COLUMN || ' = ';
+
             IF (V_TABLE = 'IMAJ_PACIENTES' AND V_COLUMN = 'FECHA_NACIMIENTO')
                 OR (V_TABLE = 'IMAJ_ORDENES' AND V_COLUMN = 'FECHA_CITA')
                 OR (V_TABLE = 'IMAJ_EXAMENES' AND V_COLUMN = 'FECHA_SOLICITUD') THEN
@@ -358,11 +360,14 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_APP_PKG AS
             V_INDEX := V_INDEX + 1;
         END LOOP;
 
-        V_SQL := 'UPDATE ' || V_TABLE || ' t SET (' || V_COLUMNS || ') = (SELECT ' ||
-            V_UPDATE_SELECT_LIST || ' FROM JSON_TABLE(:payload, ''$'' COLUMNS (' ||
-            V_JSON_COLUMNS || ')) j WHERE t.ID = :record_id) WHERE t.ID = :record_id';
+        -- On Oracle XE 21c, the correlated multi-column UPDATE with JSON_TABLE
+        -- can keep old values after the first column despite reporting success.
+        -- Project the payload once and assign every column from the MERGE source.
+        V_SQL := 'MERGE INTO ' || V_TABLE || ' t USING JSON_TABLE(:payload, ''$'' COLUMNS (' ||
+            V_JSON_COLUMNS || ')) j ON (t.ID = :record_id) WHEN MATCHED THEN UPDATE SET ' ||
+            V_UPDATE_SELECT_LIST;
 
-        EXECUTE IMMEDIATE V_SQL USING P_PAYLOAD, P_ID, P_ID;
+        EXECUTE IMMEDIATE V_SQL USING P_PAYLOAD, P_ID;
 
         IF SQL%ROWCOUNT = 0 THEN
             RAISE_APPLICATION_ERROR(-20002, 'Registro no encontrado.');

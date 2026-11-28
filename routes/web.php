@@ -37,7 +37,6 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
         $oracle = app(OracleCrudService::class);
         $orderIds = array_column($oracle->rows('IMAJ_ORDENES'), 'ID');
         $examIds = array_column($oracle->rows('IMAJ_EXAMENES'), 'ID');
-        $paymentIds = array_column($oracle->rows('IMAJ_PAGOS'), 'ID');
 
         $ordenesHoy = DB::table('IMAJ_ORDENES')
             ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
@@ -56,9 +55,9 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
             ->where('EJECUTADA', 1)
             ->count();
 
-        $ingresosMes = DB::table('IMAJ_PAGOS')
-            ->when($paymentIds !== null, fn ($query) => $query->whereIn('ID', $paymentIds))
-            ->sum('MONTO');
+        $ingresosMes = collect($oracle->report('REPORT_REVENUE'))
+            ->where('PERIODO', now()->format('Y-m'))
+            ->sum('INGRESOS');
 
         $urgentesCnt = DB::table('IMAJ_EXAMENES')
             ->when($examIds !== null, fn ($query) => $query->whereIn('ID', $examIds))

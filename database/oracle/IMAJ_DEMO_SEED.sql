@@ -1,7 +1,9 @@
--- Cargar datos de demostracion despues de ejecutar php artisan migrate.
+-- Cargar datos de demostracion despues de ejecutar `php artisan migrate` o instalar el esquema IMAJ.
 -- Proporcionar un hash bcrypt generado localmente; nunca pegar la contrasena aqui.
 SET ECHO OFF
 SET VERIFY OFF
+-- IMAJ_INSTALL.sql deja DEFINE OFF en la misma sesion de SQL Developer/SQL*Plus.
+SET DEFINE ON
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
