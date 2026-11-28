@@ -17,18 +17,48 @@ class Usuario extends Authenticatable
 
     public $timestamps = false;
 
-    protected $fillable = ['NOMBRE_USUARIO', 'PASSWORD_HASH', 'ROL_ID'];
+    protected $fillable = ['NOMBRE_USUARIO', 'CONTRASEÑA', 'ROL_ID'];
 
     protected $hidden = ['PASSWORD_HASH', 'CONTRASEÑA'];
 
     protected function casts(): array
     {
-        return ['PASSWORD_HASH' => 'hashed'];
+        return ['CONTRASEÑA' => 'hashed'];
+    }
+
+    public function getAttribute($key)
+    {
+        $value = parent::getAttribute($key);
+
+        if ($value !== null) {
+            return $value;
+        }
+
+        $upper = strtoupper($key);
+        $lower = strtolower($key);
+
+        if ($key !== $upper && parent::getAttribute($upper) !== null) {
+            return parent::getAttribute($upper);
+        }
+
+        if ($key !== $lower && parent::getAttribute($lower) !== null) {
+            return parent::getAttribute($lower);
+        }
+
+        return null;
+    }
+
+    public function getAuthPassword(): string
+    {
+        return (string) (
+            $this->getAttribute('CONTRASEÑA')
+            ?? ''
+        );
     }
 
     public function getAuthPasswordName(): string
     {
-        return 'PASSWORD_HASH';
+        return 'CONTRASEÑA';
     }
 
     protected function oracleSequence(): string
@@ -44,6 +74,11 @@ class Usuario extends Authenticatable
     public function clinicas()
     {
         return $this->hasMany(Clinica::class, 'ADMINISTRADOR_ID');
+    }
+
+    public function examenes()
+    {
+        return $this->hasMany(Examen::class, 'RADIOLOGO_ID');
     }
 
     public function sucursales()

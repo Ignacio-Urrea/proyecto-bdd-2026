@@ -7,6 +7,7 @@ use App\Http\Requests\Crud\StoreCrudRequest;
 use App\Http\Requests\Crud\UpdateCrudRequest;
 use App\Services\OracleCrudService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -31,16 +32,39 @@ abstract class CrudController extends Controller
         return CrudRequestRules::for($this->routeName, $updating);
     }
 
-    public function index(): View
+    public function index(Request $request): View
     {
         $modelClass = $this->modelClass;
         $table = (new $modelClass)->getTable();
+        $dateFrom = null;
+        $dateTo = null;
+
+        if (in_array($this->routeName, ['ordenes', 'examenes'], true)) {
+            $filters = $request->validate([
+                'desde' => ['nullable', 'date_format:Y-m-d'],
+                'hasta' => ['nullable', 'date_format:Y-m-d'],
+                'hoy' => ['sometimes', 'boolean'],
+            ]);
+
+            if ($request->boolean('hoy')) {
+                $dateFrom = $dateTo = now()->toDateString();
+            } else {
+                $dateFrom = $filters['desde'] ?? null;
+                $dateTo = $filters['hasta'] ?? null;
+            }
+        }
 
         return view($this->viewDirectory().'.index', [
             'title' => $this->title,
             'routeName' => $this->routeName,
             'fields' => $this->visibleFields('index'),
-            'records' => app(OracleCrudService::class)->paginate($table),
+            'records' => app(OracleCrudService::class)->paginate(
+                $table,
+                dateFrom: $dateFrom,
+                dateTo: $dateTo,
+            ),
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
         ]);
     }
 
@@ -127,9 +151,15 @@ abstract class CrudController extends Controller
     private function formView(?object $record, string $action, string $template): View
     {
         $rules = $this->validationRules(updating: $record !== null);
-        $fields = array_map(function (array $field) use ($rules): array {
+        $statusOptions = config('imaj.status_labels.'.$this->routeName, []);
+        $fields = array_map(function (array $field) use ($rules, $statusOptions): array {
             $fieldRules = $rules[$field['name']] ?? [];
             $field['required'] = in_array('required', $fieldRules, true);
+
+            if ($field['name'] === 'ESTADO' && $statusOptions !== []) {
+                $field['type'] = 'select';
+                $field['options'] = $statusOptions;
+            }
 
             if (isset($field['options']) && is_callable($field['options'])) {
                 $field['options'] = $field['options']();

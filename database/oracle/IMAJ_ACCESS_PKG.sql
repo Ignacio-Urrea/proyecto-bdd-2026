@@ -1,0 +1,731 @@
+CREATE OR REPLACE PACKAGE IMAJ_ACCESS_PKG AS
+    PROCEDURE LIST_ROWS(P_TABLE IN VARCHAR2, P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR);
+    PROCEDURE FIND_ROW(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    );
+    PROCEDURE LIST_ROWS_PAGE(
+        P_TABLE IN VARCHAR2,
+        P_DATE_FROM IN VARCHAR2,
+        P_DATE_TO IN VARCHAR2,
+        P_USER_ID IN NUMBER,
+        P_OFFSET IN NUMBER,
+        P_LIMIT IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    );
+    PROCEDURE COUNT_ROWS_PAGE(
+        P_TABLE IN VARCHAR2,
+        P_DATE_FROM IN VARCHAR2,
+        P_DATE_TO IN VARCHAR2,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    );
+    PROCEDURE LIST_ORDER_PRESTATIONS(
+        P_ORDER_ID IN NUMBER,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    );
+    PROCEDURE LIST_RADIOLOGISTS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR);
+
+    PROCEDURE INSERT_ROW(P_TABLE IN VARCHAR2, P_PAYLOAD IN CLOB, P_USER_ID IN NUMBER);
+    PROCEDURE UPDATE_ROW(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_PAYLOAD IN CLOB,
+        P_USER_ID IN NUMBER
+    );
+    PROCEDURE DELETE_ROW(P_TABLE IN VARCHAR2, P_ID IN NUMBER, P_USER_ID IN NUMBER);
+
+    PROCEDURE CREATE_ORDER(
+        P_PATIENT_ID IN NUMBER,
+        P_BRANCH_ID IN NUMBER,
+        P_DATE IN VARCHAR2,
+        P_HOUR IN NUMBER,
+        P_USER_ID IN NUMBER
+    );
+    PROCEDURE BUILD_BUDGET(
+        P_ORDER_ID IN NUMBER,
+        P_SERVICES IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    );
+    PROCEDURE REGISTER_PAYMENT(
+        P_BUDGET_ID IN NUMBER,
+        P_AMOUNT IN NUMBER,
+        P_METHOD IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    );
+    PROCEDURE COMPLETE_EXAM(
+        P_EXAM_ID IN NUMBER,
+        P_STATUS IN NUMBER,
+        P_COMPLETED IN NUMBER,
+        P_USER_ID IN NUMBER
+    );
+    PROCEDURE PUBLISH_REPORT(
+        P_EXAM_ID IN NUMBER,
+        P_TITLE IN VARCHAR2,
+        P_BODY IN VARCHAR2,
+        P_ADDENDUM IN NUMBER,
+        P_PATH IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    );
+
+    PROCEDURE REPORT_ORDERS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR);
+    PROCEDURE REPORT_REVENUE(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR);
+    PROCEDURE REPORT_EXAMS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR);
+END IMAJ_ACCESS_PKG;
+/
+
+CREATE OR REPLACE PACKAGE BODY IMAJ_ACCESS_PKG AS
+    FUNCTION VALID_TABLE(P_INPUT IN VARCHAR2) RETURN VARCHAR2 IS
+        V_TABLE VARCHAR2(128) := UPPER(TRIM(P_INPUT));
+    BEGIN
+        CASE V_TABLE
+            WHEN 'IMAJ_ROLES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_REGIONES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_PRESTACIONES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_USUARIOS' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_CIUDADES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_DIRECCIONES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_CLINICAS' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_SUCURSALES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_PACIENTES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_ORDENES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_EXAMENES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_PRESUPUESTOS' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_PAGOS' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_DETALLE_PRESTACIONES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_INFORMES' THEN RETURN V_TABLE;
+            WHEN 'IMAJ_IMAGENES' THEN RETURN V_TABLE;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20001, 'Tabla no habilitada para control de acceso.');
+        END CASE;
+    END VALID_TABLE;
+
+    FUNCTION USER_ROLE(P_USER_ID IN NUMBER) RETURN VARCHAR2 IS
+        V_ROLE VARCHAR2(32);
+    BEGIN
+        IF P_USER_ID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20021, 'Se requiere una sesion autenticada.');
+        END IF;
+
+        SELECT UPPER(R.NOMBRE_ROL)
+        INTO V_ROLE
+        FROM IMAJ_USUARIOS U
+        JOIN IMAJ_ROLES R ON R.ID = U.ROL_ID
+        WHERE U.ID = P_USER_ID;
+
+        RETURN V_ROLE;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20021, 'El usuario autenticado no existe.');
+    END USER_ROLE;
+
+    FUNCTION BUILD_SCOPE_FILTER(
+        P_TABLE IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    ) RETURN VARCHAR2 IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_ROLE VARCHAR2(32) := USER_ROLE(P_USER_ID);
+        V_USER_ID VARCHAR2(64) := TO_CHAR(
+            P_USER_ID,
+            'FM9999999999999999999999999990',
+            'NLS_NUMERIC_CHARACTERS=''.,'''
+        );
+        V_BRANCH_FILTER VARCHAR2(2000);
+        V_CLINIC_FILTER VARCHAR2(2000);
+        V_ORDER_FILTER VARCHAR2(2000);
+        V_EXAM_FILTER VARCHAR2(2000);
+        V_REPORT_FILTER VARCHAR2(2000);
+        V_BUDGET_FILTER VARCHAR2(2000);
+        V_ADDRESS_FILTER VARCHAR2(4000);
+    BEGIN
+        IF V_ROLE NOT IN ('CLINICA_ADMIN', 'SUCURSAL_ADMIN', 'RADIOLOGO') THEN
+            RETURN '1 = 1';
+        END IF;
+
+        IF V_ROLE = 'CLINICA_ADMIN' THEN
+            V_BRANCH_FILTER :=
+                'S.CLINICA_ID IN (SELECT C.ID FROM IMAJ_CLINICAS C ' ||
+                'WHERE C.ADMINISTRADOR_ID = ' || V_USER_ID || ')';
+            V_CLINIC_FILTER := 'C.ADMINISTRADOR_ID = ' || V_USER_ID;
+            V_ORDER_FILTER :=
+                'O.SUCURSAL_ID IN (SELECT S.ID FROM IMAJ_SUCURSALES S WHERE ' ||
+                V_BRANCH_FILTER || ')';
+            V_EXAM_FILTER :=
+                'E.ORDEN_ID IN (SELECT O.ID FROM IMAJ_ORDENES O WHERE ' ||
+                V_ORDER_FILTER || ')';
+        ELSIF V_ROLE = 'SUCURSAL_ADMIN' THEN
+            V_BRANCH_FILTER := 'S.ADMINISTRADOR_ID = ' || V_USER_ID;
+            V_CLINIC_FILTER :=
+                'C.ID IN (SELECT S.CLINICA_ID FROM IMAJ_SUCURSALES S WHERE ' ||
+                V_BRANCH_FILTER || ')';
+            V_ORDER_FILTER :=
+                'O.SUCURSAL_ID IN (SELECT S.ID FROM IMAJ_SUCURSALES S WHERE ' ||
+                V_BRANCH_FILTER || ')';
+            V_EXAM_FILTER :=
+                'E.ORDEN_ID IN (SELECT O.ID FROM IMAJ_ORDENES O WHERE ' ||
+                V_ORDER_FILTER || ')';
+        ELSE
+            V_BRANCH_FILTER :=
+                'S.ID IN (SELECT O.SUCURSAL_ID FROM IMAJ_ORDENES O ' ||
+                'JOIN IMAJ_EXAMENES E ON E.ORDEN_ID = O.ID ' ||
+                'WHERE E.RADIOLOGO_ID = ' || V_USER_ID || ')';
+            V_CLINIC_FILTER := '1 = 0';
+            V_ORDER_FILTER :=
+                'O.ID IN (SELECT E.ORDEN_ID FROM IMAJ_EXAMENES E ' ||
+                'WHERE E.RADIOLOGO_ID = ' || V_USER_ID || ')';
+            V_EXAM_FILTER := 'E.RADIOLOGO_ID = ' || V_USER_ID;
+        END IF;
+
+        V_REPORT_FILTER :=
+            'T.EXAMEN_ID IN (SELECT E.ID FROM IMAJ_EXAMENES E WHERE ' ||
+            V_EXAM_FILTER || ')';
+        V_BUDGET_FILTER :=
+            'T.ORDEN_ID IN (SELECT O.ID FROM IMAJ_ORDENES O WHERE ' ||
+            V_ORDER_FILTER || ')';
+        V_ADDRESS_FILTER :=
+            '(D.ID IN (SELECT C.DIRECCION_ID FROM IMAJ_CLINICAS C WHERE ' ||
+            V_CLINIC_FILTER || ') OR D.ID IN (' ||
+            'SELECT S.DIRECCION_ID FROM IMAJ_SUCURSALES S WHERE ' ||
+            V_BRANCH_FILTER || '))';
+
+        CASE V_TABLE
+            WHEN 'IMAJ_ROLES' THEN
+                RETURN '1 = 0';
+            WHEN 'IMAJ_USUARIOS' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN
+                    RETURN 'T.ID = ' || V_USER_ID;
+                END IF;
+                RETURN 'T.ID = ' || V_USER_ID ||
+                    ' OR T.ID IN (SELECT S.ADMINISTRADOR_ID ' ||
+                    'FROM IMAJ_SUCURSALES S WHERE ' || V_BRANCH_FILTER || ')';
+            WHEN 'IMAJ_CLINICAS' THEN
+                RETURN REGEXP_REPLACE(V_CLINIC_FILTER, '^C[.]', 'T.');
+            WHEN 'IMAJ_SUCURSALES' THEN
+                RETURN REGEXP_REPLACE(V_BRANCH_FILTER, '^S[.]', 'T.');
+            WHEN 'IMAJ_PACIENTES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.SUCURSAL_ID IN (SELECT S.ID FROM IMAJ_SUCURSALES S WHERE ' ||
+                    V_BRANCH_FILTER || ')';
+            WHEN 'IMAJ_ORDENES' THEN
+                RETURN REGEXP_REPLACE(V_ORDER_FILTER, '^O[.]', 'T.');
+            WHEN 'IMAJ_EXAMENES' THEN
+                RETURN REGEXP_REPLACE(V_EXAM_FILTER, '^E[.]', 'T.');
+            WHEN 'IMAJ_INFORMES' THEN
+                RETURN V_REPORT_FILTER;
+            WHEN 'IMAJ_PRESUPUESTOS' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN V_BUDGET_FILTER;
+            WHEN 'IMAJ_PAGOS' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.PRESUPUESTO_ID IN (SELECT B.ID FROM IMAJ_PRESUPUESTOS B ' ||
+                    'WHERE B.ORDEN_ID IN (SELECT O.ID FROM IMAJ_ORDENES O WHERE ' ||
+                    V_ORDER_FILTER || '))';
+            WHEN 'IMAJ_DETALLE_PRESTACIONES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.PRESUPUESTO_ID IN (SELECT B.ID FROM IMAJ_PRESUPUESTOS B ' ||
+                    'WHERE B.ORDEN_ID IN (SELECT O.ID FROM IMAJ_ORDENES O WHERE ' ||
+                    V_ORDER_FILTER || '))';
+            WHEN 'IMAJ_IMAGENES' THEN
+                RETURN 'T.EXAMEN_ID IN (SELECT E.ID FROM IMAJ_EXAMENES E WHERE ' ||
+                    V_EXAM_FILTER || ') OR T.INFORME_ID IN (' ||
+                    'SELECT R.ID FROM IMAJ_INFORMES R WHERE ' ||
+                    'R.EXAMEN_ID IN (SELECT E.ID FROM IMAJ_EXAMENES E WHERE ' ||
+                    V_EXAM_FILTER || '))';
+            WHEN 'IMAJ_DIRECCIONES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.ID IN (SELECT C.DIRECCION_ID FROM IMAJ_CLINICAS C WHERE ' ||
+                    V_CLINIC_FILTER || ') OR T.ID IN (' ||
+                    'SELECT S.DIRECCION_ID FROM IMAJ_SUCURSALES S WHERE ' ||
+                    V_BRANCH_FILTER || ')';
+            WHEN 'IMAJ_CIUDADES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.ID IN (SELECT D.CIUDAD_ID FROM IMAJ_DIRECCIONES D WHERE ' ||
+                    V_ADDRESS_FILTER || ')';
+            WHEN 'IMAJ_REGIONES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN 'T.ID IN (SELECT C.REGION_ID FROM IMAJ_CIUDADES C ' ||
+                    'JOIN IMAJ_DIRECCIONES D ON D.CIUDAD_ID = C.ID WHERE ' ||
+                    V_ADDRESS_FILTER || ')';
+            WHEN 'IMAJ_PRESTACIONES' THEN
+                IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
+                RETURN '1 = 1';
+            ELSE
+                RETURN '1 = 0';
+        END CASE;
+    END BUILD_SCOPE_FILTER;
+
+    FUNCTION CAN_ACCESS(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_USER_ID IN NUMBER
+    ) RETURN BOOLEAN IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_FILTER VARCHAR2(4000);
+        V_COUNT PLS_INTEGER;
+    BEGIN
+        IF P_ID IS NULL THEN
+            RETURN FALSE;
+        END IF;
+
+        V_FILTER := BUILD_SCOPE_FILTER(V_TABLE, P_USER_ID);
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM ' || V_TABLE || ' T WHERE T.ID = :record_id AND (' ||
+            V_FILTER || ')'
+            INTO V_COUNT
+            USING P_ID;
+
+        RETURN V_COUNT > 0;
+    END CAN_ACCESS;
+
+    FUNCTION JSON_NUMBER(P_PAYLOAD IN CLOB, P_KEY IN VARCHAR2) RETURN NUMBER IS
+    V_OBJECT JSON_OBJECT_T;
+    BEGIN
+        IF P_PAYLOAD IS NULL THEN
+            RETURN NULL;
+        END IF;
+
+        V_OBJECT := JSON_OBJECT_T.PARSE(P_PAYLOAD);
+        RETURN V_OBJECT.GET_NUMBER(P_KEY);
+    END JSON_NUMBER;
+
+    PROCEDURE ASSERT_REFERENCE(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        IF NOT CAN_ACCESS(P_TABLE, P_ID, P_USER_ID) THEN
+            RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para usar esta referencia.');
+        END IF;
+    END ASSERT_REFERENCE;
+
+    PROCEDURE ASSERT_USER_ROLE(P_TARGET_ID IN NUMBER, P_ROLE IN VARCHAR2) IS
+        V_COUNT PLS_INTEGER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO V_COUNT
+        FROM IMAJ_USUARIOS U
+        JOIN IMAJ_ROLES R ON R.ID = U.ROL_ID
+        WHERE U.ID = P_TARGET_ID
+          AND UPPER(R.NOMBRE_ROL) = P_ROLE;
+
+        IF V_COUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20021, 'El usuario seleccionado no tiene el perfil requerido.');
+        END IF;
+    END ASSERT_USER_ROLE;
+
+    PROCEDURE ASSERT_WRITE_ACCESS(
+        P_TABLE IN VARCHAR2,
+        P_ACTION IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_PAYLOAD IN CLOB,
+        P_USER_ID IN NUMBER
+    ) IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_ACTION VARCHAR2(10) := UPPER(TRIM(P_ACTION));
+        V_ROLE VARCHAR2(32) := USER_ROLE(P_USER_ID);
+        V_REFERENCE_ID NUMBER;
+        V_ASSIGNED_USER_ID NUMBER;
+    BEGIN
+        IF V_ACTION NOT IN ('INSERT', 'UPDATE', 'DELETE') THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Operacion no habilitada.');
+        END IF;
+
+        IF V_ROLE NOT IN ('CLINICA_ADMIN', 'SUCURSAL_ADMIN', 'RADIOLOGO') THEN
+            RETURN;
+        END IF;
+
+        IF V_ACTION IN ('UPDATE', 'DELETE') THEN
+            ASSERT_REFERENCE(V_TABLE, P_ID, P_USER_ID);
+        END IF;
+
+        IF V_ACTION = 'DELETE' THEN
+            IF V_ROLE = 'RADIOLOGO'
+               OR V_TABLE IN ('IMAJ_ROLES', 'IMAJ_USUARIOS', 'IMAJ_PRESTACIONES') THEN
+                RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para eliminar este recurso.');
+            END IF;
+            RETURN;
+        END IF;
+
+        IF V_ROLE = 'RADIOLOGO' THEN
+            IF V_ACTION = 'UPDATE' AND V_TABLE = 'IMAJ_EXAMENES' THEN
+                V_ASSIGNED_USER_ID := JSON_NUMBER(P_PAYLOAD, 'RADIOLOGO_ID');
+                IF V_ASSIGNED_USER_ID IS NOT NULL AND V_ASSIGNED_USER_ID <> P_USER_ID THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'Solo puedes mantener exámenes asignados a tu usuario.');
+                END IF;
+
+                V_REFERENCE_ID := JSON_NUMBER(P_PAYLOAD, 'ORDEN_ID');
+                IF V_REFERENCE_ID IS NOT NULL THEN
+                    ASSERT_REFERENCE('IMAJ_ORDENES', V_REFERENCE_ID, P_USER_ID);
+                END IF;
+                RETURN;
+            END IF;
+
+            IF V_ACTION = 'INSERT' AND V_TABLE = 'IMAJ_INFORMES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_EXAMENES',
+                    JSON_NUMBER(P_PAYLOAD, 'EXAMEN_ID'),
+                    P_USER_ID
+                );
+                RETURN;
+            END IF;
+
+            RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para modificar este recurso.');
+        END IF;
+
+        CASE V_TABLE
+            WHEN 'IMAJ_CLINICAS' THEN
+                IF V_ROLE <> 'CLINICA_ADMIN' OR V_ACTION <> 'UPDATE' THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para modificar clínicas.');
+                END IF;
+                V_ASSIGNED_USER_ID := JSON_NUMBER(P_PAYLOAD, 'ADMINISTRADOR_ID');
+                IF V_ASSIGNED_USER_ID IS NOT NULL AND V_ASSIGNED_USER_ID <> P_USER_ID THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'No puedes cambiar el administrador de la clínica.');
+                END IF;
+            WHEN 'IMAJ_SUCURSALES' THEN
+                IF V_ROLE = 'SUCURSAL_ADMIN' AND V_ACTION <> 'UPDATE' THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para crear sucursales.');
+                END IF;
+                V_REFERENCE_ID := JSON_NUMBER(P_PAYLOAD, 'CLINICA_ID');
+                IF V_REFERENCE_ID IS NOT NULL THEN
+                    ASSERT_REFERENCE('IMAJ_CLINICAS', V_REFERENCE_ID, P_USER_ID);
+                ELSIF V_ROLE = 'CLINICA_ADMIN' THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'La clínica de la sucursal es obligatoria.');
+                END IF;
+                V_ASSIGNED_USER_ID := JSON_NUMBER(P_PAYLOAD, 'ADMINISTRADOR_ID');
+                IF V_ASSIGNED_USER_ID IS NOT NULL THEN
+                    IF V_ROLE = 'SUCURSAL_ADMIN' AND V_ASSIGNED_USER_ID <> P_USER_ID THEN
+                        RAISE_APPLICATION_ERROR(-20021, 'No puedes cambiar el administrador de la sucursal.');
+                    ELSIF V_ROLE = 'CLINICA_ADMIN' THEN
+                        ASSERT_USER_ROLE(V_ASSIGNED_USER_ID, 'SUCURSAL_ADMIN');
+                    END IF;
+                END IF;
+            WHEN 'IMAJ_DIRECCIONES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_CIUDADES',
+                    JSON_NUMBER(P_PAYLOAD, 'CIUDAD_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_PACIENTES' THEN
+                V_REFERENCE_ID := JSON_NUMBER(P_PAYLOAD, 'SUCURSAL_ID');
+                ASSERT_REFERENCE('IMAJ_SUCURSALES', V_REFERENCE_ID, P_USER_ID);
+            WHEN 'IMAJ_ORDENES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_PACIENTES',
+                    JSON_NUMBER(P_PAYLOAD, 'PACIENTE_ID'),
+                    P_USER_ID
+                );
+                ASSERT_REFERENCE(
+                    'IMAJ_SUCURSALES',
+                    JSON_NUMBER(P_PAYLOAD, 'SUCURSAL_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_EXAMENES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_ORDENES',
+                    JSON_NUMBER(P_PAYLOAD, 'ORDEN_ID'),
+                    P_USER_ID
+                );
+                V_ASSIGNED_USER_ID := JSON_NUMBER(P_PAYLOAD, 'RADIOLOGO_ID');
+                IF V_ASSIGNED_USER_ID IS NOT NULL THEN
+                    ASSERT_USER_ROLE(V_ASSIGNED_USER_ID, 'RADIOLOGO');
+                END IF;
+            WHEN 'IMAJ_PRESUPUESTOS' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_ORDENES',
+                    JSON_NUMBER(P_PAYLOAD, 'ORDEN_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_PAGOS' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_PRESUPUESTOS',
+                    JSON_NUMBER(P_PAYLOAD, 'PRESUPUESTO_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_DETALLE_PRESTACIONES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_PRESUPUESTOS',
+                    JSON_NUMBER(P_PAYLOAD, 'PRESUPUESTO_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_INFORMES' THEN
+                ASSERT_REFERENCE(
+                    'IMAJ_EXAMENES',
+                    JSON_NUMBER(P_PAYLOAD, 'EXAMEN_ID'),
+                    P_USER_ID
+                );
+            WHEN 'IMAJ_IMAGENES' THEN
+                V_REFERENCE_ID := JSON_NUMBER(P_PAYLOAD, 'EXAMEN_ID');
+                IF V_REFERENCE_ID IS NOT NULL THEN
+                    ASSERT_REFERENCE('IMAJ_EXAMENES', V_REFERENCE_ID, P_USER_ID);
+                END IF;
+                V_REFERENCE_ID := JSON_NUMBER(P_PAYLOAD, 'INFORME_ID');
+                IF V_REFERENCE_ID IS NOT NULL THEN
+                    ASSERT_REFERENCE('IMAJ_INFORMES', V_REFERENCE_ID, P_USER_ID);
+                END IF;
+                IF JSON_NUMBER(P_PAYLOAD, 'EXAMEN_ID') IS NULL
+                   AND JSON_NUMBER(P_PAYLOAD, 'INFORME_ID') IS NULL THEN
+                    RAISE_APPLICATION_ERROR(-20021, 'La imagen debe vincularse a un examen o informe.');
+                END IF;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para modificar este recurso.');
+        END CASE;
+    END ASSERT_WRITE_ACCESS;
+
+    PROCEDURE ASSERT_MANAGER_REFERENCE(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_REFERENCE(P_TABLE, P_ID, P_USER_ID);
+    END ASSERT_MANAGER_REFERENCE;
+
+    PROCEDURE LIST_ROWS(P_TABLE IN VARCHAR2, P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR) IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER(P_TABLE, P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT T.* FROM ' || V_TABLE || ' T WHERE (' || V_FILTER || ') ORDER BY T.ID';
+    END LIST_ROWS;
+
+    PROCEDURE FIND_ROW(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    ) IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER(P_TABLE, P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT T.* FROM ' || V_TABLE ||
+            ' T WHERE T.ID = :record_id AND (' || V_FILTER || ')'
+            USING P_ID;
+    END FIND_ROW;
+
+    PROCEDURE LIST_ROWS_PAGE(
+        P_TABLE IN VARCHAR2,
+        P_DATE_FROM IN VARCHAR2,
+        P_DATE_TO IN VARCHAR2,
+        P_USER_ID IN NUMBER,
+        P_OFFSET IN NUMBER,
+        P_LIMIT IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    ) IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER(P_TABLE, P_USER_ID);
+        V_SQL VARCHAR2(32767);
+    BEGIN
+        IF P_OFFSET IS NULL OR P_OFFSET < 0 OR P_LIMIT IS NULL OR P_LIMIT < 1 OR P_LIMIT > 100 THEN
+            RAISE_APPLICATION_ERROR(-20014, 'La paginación debe usar un desplazamiento válido y entre 1 y 100 filas.');
+        END IF;
+
+        V_SQL := 'SELECT T.*, COUNT(*) OVER() AS TOTAL_COUNT FROM ' || V_TABLE ||
+            ' T WHERE (' || V_FILTER || ')';
+
+        IF V_TABLE = 'IMAJ_ORDENES' THEN
+            V_SQL := V_SQL ||
+                ' AND (:date_from IS NULL OR T.FECHA_CITA >= TO_DATE(:date_from, ''YYYY-MM-DD''))' ||
+                ' AND (:date_to IS NULL OR T.FECHA_CITA < TO_DATE(:date_to, ''YYYY-MM-DD'') + 1)';
+        ELSIF V_TABLE = 'IMAJ_EXAMENES' THEN
+            V_SQL := V_SQL ||
+                ' AND (:date_from IS NULL OR T.FECHA_SOLICITUD >= TO_DATE(:date_from, ''YYYY-MM-DD''))' ||
+                ' AND (:date_to IS NULL OR T.FECHA_SOLICITUD < TO_DATE(:date_to, ''YYYY-MM-DD'') + 1)';
+        END IF;
+
+        V_SQL := V_SQL || ' ORDER BY T.ID OFFSET :row_offset ROWS FETCH NEXT :row_limit ROWS ONLY';
+
+        IF V_TABLE IN ('IMAJ_ORDENES', 'IMAJ_EXAMENES') THEN
+            OPEN P_CURSOR FOR V_SQL USING
+                P_DATE_FROM, P_DATE_FROM, P_DATE_TO, P_DATE_TO, P_OFFSET, P_LIMIT;
+        ELSE
+            OPEN P_CURSOR FOR V_SQL USING P_OFFSET, P_LIMIT;
+        END IF;
+    END LIST_ROWS_PAGE;
+
+    PROCEDURE COUNT_ROWS_PAGE(
+        P_TABLE IN VARCHAR2,
+        P_DATE_FROM IN VARCHAR2,
+        P_DATE_TO IN VARCHAR2,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    ) IS
+        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER(P_TABLE, P_USER_ID);
+        V_SQL VARCHAR2(32767);
+    BEGIN
+        V_SQL := 'SELECT COUNT(*) AS TOTAL_COUNT FROM ' || V_TABLE ||
+            ' T WHERE (' || V_FILTER || ')';
+
+        IF V_TABLE = 'IMAJ_ORDENES' THEN
+            V_SQL := V_SQL ||
+                ' AND (:date_from IS NULL OR T.FECHA_CITA >= TO_DATE(:date_from, ''YYYY-MM-DD''))' ||
+                ' AND (:date_to IS NULL OR T.FECHA_CITA < TO_DATE(:date_to, ''YYYY-MM-DD'') + 1)';
+        ELSIF V_TABLE = 'IMAJ_EXAMENES' THEN
+            V_SQL := V_SQL ||
+                ' AND (:date_from IS NULL OR T.FECHA_SOLICITUD >= TO_DATE(:date_from, ''YYYY-MM-DD''))' ||
+                ' AND (:date_to IS NULL OR T.FECHA_SOLICITUD < TO_DATE(:date_to, ''YYYY-MM-DD'') + 1)';
+        END IF;
+
+        IF V_TABLE IN ('IMAJ_ORDENES', 'IMAJ_EXAMENES') THEN
+            OPEN P_CURSOR FOR V_SQL USING
+                P_DATE_FROM, P_DATE_FROM, P_DATE_TO, P_DATE_TO;
+        ELSE
+            OPEN P_CURSOR FOR V_SQL;
+        END IF;
+    END COUNT_ROWS_PAGE;
+
+    PROCEDURE LIST_ORDER_PRESTATIONS(
+        P_ORDER_ID IN NUMBER,
+        P_USER_ID IN NUMBER,
+        P_CURSOR OUT SYS_REFCURSOR
+    ) IS
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER('IMAJ_ORDENES', P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT P.ID, P.NOMBRE, P.PRECIO_BASE ' ||
+            'FROM IMAJ_ORDENES O ' ||
+            'JOIN IMAJ_SUCURSALES S ON S.ID = O.SUCURSAL_ID ' ||
+            'JOIN IMAJ_PRESTACIONES P ON P.CLINICA_ID = S.CLINICA_ID ' ||
+            'WHERE O.ID = :order_id AND (' || REPLACE(V_FILTER, 'T.', 'O.') || ') ' ||
+            'AND P.HABILITADA = 1 ORDER BY P.NOMBRE'
+            USING P_ORDER_ID;
+    END LIST_ORDER_PRESTATIONS;
+
+    PROCEDURE LIST_RADIOLOGISTS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR) IS
+        V_ROLE VARCHAR2(32) := USER_ROLE(P_USER_ID);
+    BEGIN
+        IF V_ROLE = 'RADIOLOGO' THEN
+            OPEN P_CURSOR FOR
+                'SELECT U.ID, U.NOMBRE_USUARIO FROM IMAJ_USUARIOS U ' ||
+                'JOIN IMAJ_ROLES R ON R.ID = U.ROL_ID ' ||
+                'WHERE UPPER(R.NOMBRE_ROL) = ''RADIOLOGO'' AND U.ID = :user_id ' ||
+                'ORDER BY U.NOMBRE_USUARIO'
+                USING P_USER_ID;
+        ELSE
+            OPEN P_CURSOR FOR
+                'SELECT U.ID, U.NOMBRE_USUARIO FROM IMAJ_USUARIOS U ' ||
+                'JOIN IMAJ_ROLES R ON R.ID = U.ROL_ID ' ||
+                'WHERE UPPER(R.NOMBRE_ROL) = ''RADIOLOGO'' ' ||
+                'ORDER BY U.NOMBRE_USUARIO';
+        END IF;
+    END LIST_RADIOLOGISTS;
+
+    PROCEDURE INSERT_ROW(P_TABLE IN VARCHAR2, P_PAYLOAD IN CLOB, P_USER_ID IN NUMBER) IS
+    BEGIN
+        ASSERT_WRITE_ACCESS(P_TABLE, 'INSERT', NULL, P_PAYLOAD, P_USER_ID);
+        IMAJ_APP_PKG.INSERT_ROW(P_TABLE, P_PAYLOAD);
+    END INSERT_ROW;
+
+    PROCEDURE UPDATE_ROW(
+        P_TABLE IN VARCHAR2,
+        P_ID IN NUMBER,
+        P_PAYLOAD IN CLOB,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_WRITE_ACCESS(P_TABLE, 'UPDATE', P_ID, P_PAYLOAD, P_USER_ID);
+        IMAJ_APP_PKG.UPDATE_ROW(P_TABLE, P_ID, P_PAYLOAD);
+    END UPDATE_ROW;
+
+    PROCEDURE DELETE_ROW(P_TABLE IN VARCHAR2, P_ID IN NUMBER, P_USER_ID IN NUMBER) IS
+    BEGIN
+        ASSERT_WRITE_ACCESS(P_TABLE, 'DELETE', P_ID, NULL, P_USER_ID);
+        IMAJ_APP_PKG.DELETE_ROW(P_TABLE, P_ID);
+    END DELETE_ROW;
+
+    PROCEDURE CREATE_ORDER(
+        P_PATIENT_ID IN NUMBER,
+        P_BRANCH_ID IN NUMBER,
+        P_DATE IN VARCHAR2,
+        P_HOUR IN NUMBER,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_MANAGER_REFERENCE('IMAJ_PACIENTES', P_PATIENT_ID, P_USER_ID);
+        ASSERT_MANAGER_REFERENCE('IMAJ_SUCURSALES', P_BRANCH_ID, P_USER_ID);
+        IMAJ_APP_PKG.CREATE_ORDER(P_PATIENT_ID, P_BRANCH_ID, P_DATE, P_HOUR);
+    END CREATE_ORDER;
+
+    PROCEDURE BUILD_BUDGET(
+        P_ORDER_ID IN NUMBER,
+        P_SERVICES IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_MANAGER_REFERENCE('IMAJ_ORDENES', P_ORDER_ID, P_USER_ID);
+        IMAJ_APP_PKG.BUILD_BUDGET(P_ORDER_ID, P_SERVICES);
+    END BUILD_BUDGET;
+
+    PROCEDURE REGISTER_PAYMENT(
+        P_BUDGET_ID IN NUMBER,
+        P_AMOUNT IN NUMBER,
+        P_METHOD IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_MANAGER_REFERENCE('IMAJ_PRESUPUESTOS', P_BUDGET_ID, P_USER_ID);
+        IMAJ_APP_PKG.REGISTER_PAYMENT(P_BUDGET_ID, P_AMOUNT, P_METHOD);
+    END REGISTER_PAYMENT;
+
+    PROCEDURE COMPLETE_EXAM(
+        P_EXAM_ID IN NUMBER,
+        P_STATUS IN NUMBER,
+        P_COMPLETED IN NUMBER,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_MANAGER_REFERENCE('IMAJ_EXAMENES', P_EXAM_ID, P_USER_ID);
+        IMAJ_APP_PKG.COMPLETE_EXAM(P_EXAM_ID, P_STATUS, P_COMPLETED);
+    END COMPLETE_EXAM;
+
+    PROCEDURE PUBLISH_REPORT(
+        P_EXAM_ID IN NUMBER,
+        P_TITLE IN VARCHAR2,
+        P_BODY IN VARCHAR2,
+        P_ADDENDUM IN NUMBER,
+        P_PATH IN VARCHAR2,
+        P_USER_ID IN NUMBER
+    ) IS
+    BEGIN
+        ASSERT_MANAGER_REFERENCE('IMAJ_EXAMENES', P_EXAM_ID, P_USER_ID);
+        IMAJ_APP_PKG.PUBLISH_REPORT(P_EXAM_ID, P_TITLE, P_BODY, P_ADDENDUM, P_PATH);
+    END PUBLISH_REPORT;
+
+    PROCEDURE REPORT_ORDERS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR) IS
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER('IMAJ_ORDENES', P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT S.ID AS SUCURSAL_ID, S.CORREO_SUCURSAL, O.ESTADO, COUNT(*) AS TOTAL_ORDENES ' ||
+            'FROM IMAJ_ORDENES O JOIN IMAJ_SUCURSALES S ON S.ID = O.SUCURSAL_ID ' ||
+            'WHERE (' || REPLACE(V_FILTER, 'T.', 'O.') || ') ' ||
+            'GROUP BY S.ID, S.CORREO_SUCURSAL, O.ESTADO ORDER BY S.ID, O.ESTADO';
+    END REPORT_ORDERS;
+
+    PROCEDURE REPORT_REVENUE(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR) IS
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER('IMAJ_PAGOS', P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT TO_CHAR(A.FECHA_EVENTO, ''YYYY-MM'') AS PERIODO, ' ||
+            'SUM(P.MONTO) AS INGRESOS, COUNT(*) AS TOTAL_PAGOS ' ||
+            'FROM IMAJ_AUDITORIA A JOIN IMAJ_PAGOS P ON P.ID = A.REGISTRO_ID ' ||
+            'WHERE A.TABLA = ''IMAJ_PAGOS'' AND A.OPERACION = ''INSERT'' ' ||
+            'AND (' || REPLACE(V_FILTER, 'T.', 'P.') || ') ' ||
+            'GROUP BY TO_CHAR(A.FECHA_EVENTO, ''YYYY-MM'') ' ||
+            'ORDER BY TO_CHAR(A.FECHA_EVENTO, ''YYYY-MM'')';
+    END REPORT_REVENUE;
+
+    PROCEDURE REPORT_EXAMS(P_USER_ID IN NUMBER, P_CURSOR OUT SYS_REFCURSOR) IS
+        V_FILTER VARCHAR2(4000) := BUILD_SCOPE_FILTER('IMAJ_EXAMENES', P_USER_ID);
+    BEGIN
+        OPEN P_CURSOR FOR
+            'SELECT E.URGENCIA, E.ESTADO, COUNT(*) AS TOTAL_EXAMENES ' ||
+            'FROM IMAJ_EXAMENES E WHERE (' || REPLACE(V_FILTER, 'T.', 'E.') || ') ' ||
+            'GROUP BY E.URGENCIA, E.ESTADO ORDER BY E.URGENCIA, E.ESTADO';
+    END REPORT_EXAMS;
+END IMAJ_ACCESS_PKG;
+/

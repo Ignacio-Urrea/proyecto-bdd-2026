@@ -14,7 +14,7 @@ class PacienteController extends CrudController
     protected string $routeName = 'pacientes';
 
     protected array $fields = [
-        ['name' => 'CLINICA_ID', 'label' => 'Clínica', 'type' => 'select', 'options' => [self::class, 'clinicOptions']],
+        ['name' => 'SUCURSAL_ID', 'label' => 'Sucursal', 'type' => 'select', 'options' => [self::class, 'branchOptions']],
         ['name' => 'FECHA_NACIMIENTO', 'label' => 'Fecha de nacimiento', 'type' => 'date'],
         ['name' => 'NOMBRE', 'label' => 'Nombre', 'type' => 'text'],
         ['name' => 'APELLIDO_P', 'label' => 'Apellido paterno', 'type' => 'text'],
@@ -23,8 +23,8 @@ class PacienteController extends CrudController
         ['name' => 'TELEFONO', 'label' => 'Teléfono', 'type' => 'number'],
     ];
 
-    public static function clinicOptions(): array
+    public static function branchOptions(): array
     {
-        return app(OracleCrudService::class)->options('IMAJ_CLINICAS', 'NOMBRE_CLINICA');
+        return app(OracleCrudService::class)->options('IMAJ_SUCURSALES', 'CORREO_SUCURSAL');
     }
 }

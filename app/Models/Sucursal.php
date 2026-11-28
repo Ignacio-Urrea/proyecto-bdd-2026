@@ -43,4 +43,9 @@ class Sucursal extends Model
     {
         return $this->hasMany(Orden::class, 'SUCURSAL_ID');
     }
+
+    public function pacientes()
+    {
+        return $this->hasMany(Paciente::class, 'SUCURSAL_ID');
+    }
 }

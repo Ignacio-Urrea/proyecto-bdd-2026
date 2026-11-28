@@ -19,6 +19,8 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\SucursalController;
 use App\Http\Controllers\UsuarioController;
+use App\Services\OracleCrudService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'))->name('home');
@@ -30,7 +32,73 @@ Route::middleware('guest')->group(function (): void {
 
 Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
-    Route::view('/dashboard', 'crud.home')->name('dashboard');
+    Route::get('/dashboard', function () {
+        $hoy = now()->toDateString();
+        $oracle = app(OracleCrudService::class);
+        $orderIds = array_column($oracle->rows('IMAJ_ORDENES'), 'ID');
+        $examIds = array_column($oracle->rows('IMAJ_EXAMENES'), 'ID');
+
+        $ordenesHoy = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
+            ->count();
+
+        $pendientes = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
+            ->where('EJECUTADA', 0)
+            ->count();
+
+        $ejecutadas = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
+            ->where('EJECUTADA', 1)
+            ->count();
+
+        $ingresosMes = collect($oracle->report('REPORT_REVENUE'))
+            ->where('PERIODO', now()->format('Y-m'))
+            ->sum('INGRESOS');
+
+        $urgentesCnt = DB::table('IMAJ_EXAMENES')
+            ->when($examIds !== null, fn ($query) => $query->whereIn('ID', $examIds))
+            ->where('URGENCIA', 1)
+            ->whereIn('ESTADO', [1, 2])
+            ->count();
+
+        $kpis = [
+            ['label' => 'Órdenes de hoy',          'value' => $ordenesHoy,                                      'tone' => 'primary', 'go' => 'rep:orden'],
+            ['label' => 'Pendientes / ejecutadas', 'value' => "{$pendientes} / {$ejecutadas}",                 'tone' => 'warning', 'go' => 'rep:orden'],
+            ['label' => 'Ingresos del mes',        'value' => '$ '.number_format($ingresosMes, 0, ',', '.'), 'tone' => 'success', 'go' => 'rep:ingreso'],
+            ['label' => 'Exámenes urgentes',       'value' => $urgentesCnt,                                     'tone' => 'danger',  'go' => 'rep:examen'],
+        ];
+
+        $queue = DB::table('IMAJ_ORDENES as o')
+            ->join('IMAJ_PACIENTES as p', 'p.ID', '=', 'o.PACIENTE_ID')
+            ->leftJoin('IMAJ_EXAMENES as e', 'e.ORDEN_ID', '=', 'o.ID')
+            ->leftJoin('IMAJ_PRESUPUESTOS as pr', 'pr.ORDEN_ID', '=', 'o.ID')
+            ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
+            ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('o.ID', $orderIds))
+            ->whereRaw('NVL(o.EJECUTADA, 0) = 0')
+            ->whereRaw('NVL(o.ESTADO, 0) <> 3')
+            ->select(
+                'o.ID as id',
+                DB::raw("'ORD-' || o.ID as orden"),
+                DB::raw("p.NOMBRE || ' ' || p.APELLIDO_P as paciente"),
+                DB::raw("NVL(prest.NOMBRE, 'Examen radiológico') as examen"),
+                'o.HORA_CITA as hora_cita',
+                DB::raw("CASE o.ESTADO WHEN 0 THEN 'AGENDADA' WHEN 1 THEN 'PENDIENTE' WHEN 2 THEN 'EN_PROCESO' WHEN 3 THEN 'EJECUTADA' ELSE 'PENDIENTE' END as estado"),
+                DB::raw('CASE WHEN NVL(e.URGENCIA, 0) = 1 AND e.ESTADO IN (1, 2) THEN 1 ELSE 0 END as urgente')
+            )
+            ->orderByDesc('urgente')
+            ->orderBy('o.ID')
+            ->limit(20)
+            ->get()
+            ->map(fn ($r) => array_change_key_case((array) $r, CASE_LOWER))
+            ->all();
+
+        return view('crud.home', compact('kpis', 'queue'));
+    })->name('dashboard');
 
     $resources = [
         'roles' => RolController::class,
