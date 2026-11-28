@@ -202,17 +202,17 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_ACCESS_PKG AS
                     ' OR T.ID IN (SELECT S.ADMINISTRADOR_ID ' ||
                     'FROM IMAJ_SUCURSALES S WHERE ' || V_BRANCH_FILTER || ')';
             WHEN 'IMAJ_CLINICAS' THEN
-                RETURN V_CLINIC_FILTER;
+                RETURN REGEXP_REPLACE(V_CLINIC_FILTER, '^C[.]', 'T.');
             WHEN 'IMAJ_SUCURSALES' THEN
-                RETURN V_BRANCH_FILTER;
+                RETURN REGEXP_REPLACE(V_BRANCH_FILTER, '^S[.]', 'T.');
             WHEN 'IMAJ_PACIENTES' THEN
                 IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
                 RETURN 'T.SUCURSAL_ID IN (SELECT S.ID FROM IMAJ_SUCURSALES S WHERE ' ||
                     V_BRANCH_FILTER || ')';
             WHEN 'IMAJ_ORDENES' THEN
-                RETURN V_ORDER_FILTER;
+                RETURN REGEXP_REPLACE(V_ORDER_FILTER, '^O[.]', 'T.');
             WHEN 'IMAJ_EXAMENES' THEN
-                RETURN V_EXAM_FILTER;
+                RETURN REGEXP_REPLACE(V_EXAM_FILTER, '^E[.]', 'T.');
             WHEN 'IMAJ_INFORMES' THEN
                 RETURN V_REPORT_FILTER;
             WHEN 'IMAJ_PRESUPUESTOS' THEN
@@ -475,29 +475,6 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_ACCESS_PKG AS
                 RAISE_APPLICATION_ERROR(-20021, 'No tienes permiso para modificar este recurso.');
         END CASE;
     END ASSERT_WRITE_ACCESS;
-
-    FUNCTION CAN_ACCESS(
-        P_TABLE IN VARCHAR2,
-        P_ID IN NUMBER,
-        P_USER_ID IN NUMBER
-    ) RETURN BOOLEAN IS
-        V_TABLE VARCHAR2(128) := VALID_TABLE(P_TABLE);
-        V_FILTER VARCHAR2(4000);
-        V_COUNT PLS_INTEGER;
-    BEGIN
-        IF P_ID IS NULL THEN
-            RETURN FALSE;
-        END IF;
-
-        V_FILTER := BUILD_SCOPE_FILTER(V_TABLE, P_USER_ID);
-        EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM ' || V_TABLE || ' T WHERE T.ID = :record_id AND (' ||
-            V_FILTER || ')'
-            INTO V_COUNT
-            USING P_ID;
-
-        RETURN V_COUNT > 0;
-    END CAN_ACCESS;
 
     PROCEDURE ASSERT_MANAGER_REFERENCE(
         P_TABLE IN VARCHAR2,

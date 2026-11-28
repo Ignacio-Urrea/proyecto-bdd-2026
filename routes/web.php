@@ -19,7 +19,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\SucursalController;
 use App\Http\Controllers\UsuarioController;
-use App\Services\ImajAccessScope;
+use App\Services\OracleCrudService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -34,10 +34,10 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', function () {
         $hoy = now()->toDateString();
-        $scope = app(ImajAccessScope::class);
-        $orderIds = $scope->ids('IMAJ_ORDENES');
-        $examIds = $scope->ids('IMAJ_EXAMENES');
-        $paymentIds = $scope->ids('IMAJ_PAGOS');
+        $oracle = app(OracleCrudService::class);
+        $orderIds = array_column($oracle->rows('IMAJ_ORDENES'), 'ID');
+        $examIds = array_column($oracle->rows('IMAJ_EXAMENES'), 'ID');
+        $paymentIds = array_column($oracle->rows('IMAJ_PAGOS'), 'ID');
 
         $ordenesHoy = DB::table('IMAJ_ORDENES')
             ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
