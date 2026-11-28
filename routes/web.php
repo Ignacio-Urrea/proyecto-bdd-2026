@@ -35,23 +35,36 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
     Route::get('/dashboard', function () {
         $hoy = now()->toDateString();
         $oracle = app(OracleCrudService::class);
-        $orders = collect($oracle->rows('IMAJ_ORDENES'));
-        $exams = collect($oracle->rows('IMAJ_EXAMENES'));
-        $payments = collect($oracle->rows('IMAJ_PAGOS'));
+        $orderIds = array_column($oracle->rows('IMAJ_ORDENES'), 'ID');
+        $examIds = array_column($oracle->rows('IMAJ_EXAMENES'), 'ID');
+        $paymentIds = array_column($oracle->rows('IMAJ_PAGOS'), 'ID');
 
-        $todayOrders = $orders->filter(
-            fn (object $row): bool => substr((string) ($row->FECHA_CITA ?? ''), 0, 10) === $hoy,
-        );
-
-        $ordenesHoy = $todayOrders->count();
-        $pendientes = $todayOrders->filter(fn (object $row): bool => (int) ($row->EJECUTADA ?? 0) === 0)->count();
-        $ejecutadas = $todayOrders->filter(fn (object $row): bool => (int) ($row->EJECUTADA ?? 0) === 1)->count();
-        $ingresosMes = $payments->sum(fn (object $row): float => (float) ($row->MONTO ?? 0));
-        $urgentesCnt = $exams
-            ->filter(fn (object $row): bool => (int) ($row->URGENCIA ?? 0) === 1 && in_array((int) ($row->ESTADO ?? 0), [1, 2], true))
+        $ordenesHoy = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
             ->count();
 
-        $orderIds = $orders->pluck('ID')->map(fn ($id): int => (int) $id)->all();
+        $pendientes = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
+            ->where('EJECUTADA', 0)
+            ->count();
+
+        $ejecutadas = DB::table('IMAJ_ORDENES')
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('ID', $orderIds))
+            ->whereDate('FECHA_CITA', $hoy)
+            ->where('EJECUTADA', 1)
+            ->count();
+
+        $ingresosMes = DB::table('IMAJ_PAGOS')
+            ->when($paymentIds !== null, fn ($query) => $query->whereIn('ID', $paymentIds))
+            ->sum('MONTO');
+
+        $urgentesCnt = DB::table('IMAJ_EXAMENES')
+            ->when($examIds !== null, fn ($query) => $query->whereIn('ID', $examIds))
+            ->where('URGENCIA', 1)
+            ->whereIn('ESTADO', [1, 2])
+            ->count();
 
         $kpis = [
             ['label' => 'Órdenes de hoy',          'value' => $ordenesHoy,                                      'tone' => 'primary', 'go' => 'rep:orden'],
@@ -60,17 +73,13 @@ Route::middleware(['auth', 'oracle.actor'])->group(function (): void {
             ['label' => 'Exámenes urgentes',       'value' => $urgentesCnt,                                     'tone' => 'danger',  'go' => 'rep:examen'],
         ];
 
-        $queue = $orderIds === [] ? [] : DB::table('IMAJ_ORDENES as o')
+        $queue = DB::table('IMAJ_ORDENES as o')
             ->join('IMAJ_PACIENTES as p', 'p.ID', '=', 'o.PACIENTE_ID')
             ->leftJoin('IMAJ_EXAMENES as e', 'e.ORDEN_ID', '=', 'o.ID')
             ->leftJoin('IMAJ_PRESUPUESTOS as pr', 'pr.ORDEN_ID', '=', 'o.ID')
             ->leftJoin('IMAJ_DETALLE_PRESTACIONES as dp', 'dp.PRESUPUESTO_ID', '=', 'pr.ID')
             ->leftJoin('IMAJ_PRESTACIONES as prest', 'prest.ID', '=', 'dp.PRESTACION_ID')
-            ->where(function ($query) use ($orderIds): void {
-                foreach (array_chunk($orderIds, 1000) as $chunk) {
-                    $query->orWhereIn('o.ID', $chunk);
-                }
-            })
+            ->when($orderIds !== null, fn ($query) => $query->whereIn('o.ID', $orderIds))
             ->whereRaw('NVL(o.EJECUTADA, 0) = 0')
             ->whereRaw('NVL(o.ESTADO, 0) <> 3')
             ->select(

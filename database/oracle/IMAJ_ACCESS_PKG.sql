@@ -202,17 +202,17 @@ CREATE OR REPLACE PACKAGE BODY IMAJ_ACCESS_PKG AS
                     ' OR T.ID IN (SELECT S.ADMINISTRADOR_ID ' ||
                     'FROM IMAJ_SUCURSALES S WHERE ' || V_BRANCH_FILTER || ')';
             WHEN 'IMAJ_CLINICAS' THEN
-                RETURN V_CLINIC_FILTER;
+                RETURN REGEXP_REPLACE(V_CLINIC_FILTER, '^C[.]', 'T.');
             WHEN 'IMAJ_SUCURSALES' THEN
-                RETURN V_BRANCH_FILTER;
+                RETURN REGEXP_REPLACE(V_BRANCH_FILTER, '^S[.]', 'T.');
             WHEN 'IMAJ_PACIENTES' THEN
                 IF V_ROLE = 'RADIOLOGO' THEN RETURN '1 = 0'; END IF;
                 RETURN 'T.SUCURSAL_ID IN (SELECT S.ID FROM IMAJ_SUCURSALES S WHERE ' ||
                     V_BRANCH_FILTER || ')';
             WHEN 'IMAJ_ORDENES' THEN
-                RETURN V_ORDER_FILTER;
+                RETURN REGEXP_REPLACE(V_ORDER_FILTER, '^O[.]', 'T.');
             WHEN 'IMAJ_EXAMENES' THEN
-                RETURN V_EXAM_FILTER;
+                RETURN REGEXP_REPLACE(V_EXAM_FILTER, '^E[.]', 'T.');
             WHEN 'IMAJ_INFORMES' THEN
                 RETURN V_REPORT_FILTER;
             WHEN 'IMAJ_PRESUPUESTOS' THEN

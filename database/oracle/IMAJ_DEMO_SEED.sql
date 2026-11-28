@@ -665,7 +665,7 @@ BEGIN
         FOR CITY_INDEX IN 1 .. 3 LOOP
             V_CITY_INDEX := (REGION_INDEX - 1) * 3 + CITY_INDEX;
             FOR ADDRESS_INDEX IN 1 .. 3 LOOP
-                V_ID := (V_REGION_INDEX - 1) * 9 + (V_CITY_INDEX - 1) * 3 + ADDRESS_INDEX;
+                V_ID := (V_CITY_INDEX - 1) * 3 + ADDRESS_INDEX;
                 ENSURE_ADDRESS(
                     L_CITY_IDS(V_CITY_INDEX),
                     CASE ADDRESS_INDEX
