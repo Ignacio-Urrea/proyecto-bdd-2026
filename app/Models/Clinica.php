@@ -34,13 +34,13 @@ class Clinica extends Model
         return $this->belongsTo(Direccion::class, 'DIRECCION_ID');
     }
 
-    public function pacientes()
-    {
-        return $this->hasMany(Paciente::class, 'CLINICA_ID');
-    }
-
     public function sucursales()
     {
         return $this->hasMany(Sucursal::class, 'CLINICA_ID');
+    }
+
+    public function prestaciones()
+    {
+        return $this->hasMany(Prestacion::class, 'CLINICA_ID');
     }
 }

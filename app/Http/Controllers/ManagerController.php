@@ -10,6 +10,7 @@ use App\Http\Requests\Managers\StoreReportRequest;
 use App\Services\ManagerWorkflowService;
 use App\Services\OracleCrudService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ManagerController extends Controller
@@ -33,11 +34,28 @@ class ManagerController extends Controller
         return $this->complete('Orden creada.');
     }
 
-    public function createBudget(): View
+    public function createBudget(Request $request): View
     {
+        $orderId = $request->query('ORDEN_ID');
+        $selectedOrderId = is_scalar($orderId) && filter_var($orderId, FILTER_VALIDATE_INT) !== false
+            ? (int) $orderId
+            : null;
+        $prestations = $selectedOrderId === null
+            ? []
+            : app(OracleCrudService::class)->prestationsForOrder($selectedOrderId);
+
         return $this->form('Generar presupuesto', 'gestores.presupuestos.store', [
-            ['name' => 'ORDEN_ID', 'label' => 'Orden', 'type' => 'select', 'options' => fn () => app(OracleCrudService::class)->options('IMAJ_ORDENES', 'ID')],
-            ['name' => 'PRESTACION_IDS', 'label' => 'Prestaciones (puedes seleccionar varias)', 'type' => 'select', 'multiple' => true, 'options' => fn () => app(OracleCrudService::class)->options('IMAJ_PRESTACIONES', 'NOMBRE')],
+            ['name' => 'ORDEN_ID', 'label' => 'Orden', 'type' => 'select', 'value' => $selectedOrderId, 'reloadQuery' => true, 'options' => fn () => app(OracleCrudService::class)->options('IMAJ_ORDENES', 'ID')],
+            [
+                'name' => 'PRESTACION_IDS',
+                'label' => 'Prestaciones (puedes seleccionar varias)',
+                'type' => 'select',
+                'multiple' => true,
+                'options' => $prestations,
+                'emptyMessage' => $selectedOrderId === null
+                    ? 'Selecciona una orden para cargar las prestaciones de su clínica.'
+                    : 'La clínica de esta orden no tiene prestaciones habilitadas.',
+            ],
         ]);
     }
 
@@ -68,7 +86,7 @@ class ManagerController extends Controller
     {
         return $this->form('Actualizar examen', 'gestores.examenes.store', [
             ['name' => 'EXAMEN_ID', 'label' => 'Examen', 'type' => 'select', 'options' => fn () => app(OracleCrudService::class)->options('IMAJ_EXAMENES', 'ID')],
-            ['name' => 'ESTADO', 'label' => 'Nuevo estado', 'type' => 'number'],
+            ['name' => 'ESTADO', 'label' => 'Nuevo estado', 'type' => 'select', 'options' => config('imaj.status_labels.examenes')],
             ['name' => 'EJECUTADA', 'label' => 'Orden ejecutada', 'type' => 'select', 'options' => [1 => 'Sí', 0 => 'No']],
         ]);
     }

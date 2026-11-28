@@ -15,6 +15,7 @@ class CrudRequestRules
         ],
         'prestaciones' => [
             'store' => [
+                'CLINICA_ID' => ['required', 'integer'],
                 'NOMBRE' => ['required', 'string', 'max:32'],
                 'PRECIO_BASE' => ['required', 'numeric', 'min:0'],
                 'HABILITADA' => ['required', 'integer', 'in:0,1'],
@@ -23,12 +24,12 @@ class CrudRequestRules
         'usuarios' => [
             'store' => [
                 'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
-                'PASSWORD_HASH' => ['required', 'string', 'min:12', 'max:128'],
+                'CONTRASEÑA' => ['required', 'string', 'min:12', 'max:128'],
                 'ROL_ID' => ['required', 'integer'],
             ],
             'update' => [
                 'NOMBRE_USUARIO' => ['required', 'string', 'max:16'],
-                'PASSWORD_HASH' => ['nullable', 'string', 'min:12', 'max:128'],
+                'CONTRASEÑA' => ['nullable', 'string', 'min:12', 'max:128'],
                 'ROL_ID' => ['required', 'integer'],
             ],
         ],
@@ -62,7 +63,7 @@ class CrudRequestRules
         ],
         'pacientes' => [
             'store' => [
-                'CLINICA_ID' => ['required', 'integer'],
+                'SUCURSAL_ID' => ['required', 'integer'],
                 'FECHA_NACIMIENTO' => ['required', 'date'],
                 'NOMBRE' => ['required', 'string', 'max:32'],
                 'APELLIDO_P' => ['required', 'string', 'max:32'],
@@ -84,6 +85,7 @@ class CrudRequestRules
         'examenes' => [
             'store' => [
                 'ORDEN_ID' => ['required', 'integer'],
+                'RADIOLOGO_ID' => ['required', 'integer'],
                 'URGENCIA' => ['required', 'integer'],
                 'FECHA_SOLICITUD' => ['required', 'date'],
                 'ESTADO' => ['required', 'integer'],
