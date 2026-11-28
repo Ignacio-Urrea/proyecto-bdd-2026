@@ -27,11 +27,15 @@ El proyecto usa Laravel-OCI8 para conectarse a Oracle. Cada entorno necesita PHP
 
 1. Instala OCI8 para tu version y arquitectura de PHP, y asegúrate de que Oracle Instant Client o el cliente incluido con Oracle XE esté disponible en el `PATH`.
 2. Copia los valores de Oracle de `.env.example` a tu `.env` local si aún no existen. Usa `XEPDB1` como servicio y las credenciales de un usuario de aplicación, no las de `SYSTEM`.
-3. Ejecuta `php artisan migrate` para crear las tablas de Laravel y el esquema IMAJ en el esquema de ese usuario.
+3. Para instalar mediante Laravel, ejecuta `php artisan migrate`. Como alternativa para una instalacion directa desde SQLcl/SQL*Plus, sigue las instrucciones de `database/oracle/IMAJ_INSTALL.sql`.
 
 No agregues `.env` ni contraseñas al repositorio. En Windows, reinicia la terminal después de cambiar el `PATH`.
 
-`clinicas_tablas.sql` documenta el esquema actual de tablas, incluidas las columnas agregadas posteriormente como `RADIOLOGO_ID`; las migraciones siguen siendo la ruta de instalación de la aplicación e instalan además secuencias, paquetes y triggers. No ejecutes el SQL base y las migraciones sobre el mismo esquema.
+`clinicas_tablas.sql` documenta el esquema actual de tablas, incluidas las columnas agregadas posteriormente como `RADIOLOGO_ID`; no es un instalador completo. `database/oracle/IMAJ_INSTALL.sql` es el instalador SQL para un esquema Oracle vacio: crea las tablas IMAJ, secuencias, funciones, procedimientos, paquete de cursores, paquetes de aplicacion, triggers individuales y tablas Laravel para sesiones, cache y cola. Revisa objetos previos, detiene la ejecucion ante errores y valida que no queden objetos PL/SQL invalidos. No incluye datos demo.
+
+Elige una sola ruta de instalacion por esquema: `php artisan migrate` o `@database\oracle\IMAJ_INSTALL.sql` desde SQLcl/SQL*Plus en la raiz del repositorio. No ejecutes ambas en el mismo esquema. El instalador SQL no registra el historial de migraciones de Laravel; no ejecutes despues `php artisan migrate` sobre ese esquema.
+
+Para `IMAJ_INSTALL.sql`, conecta un usuario Oracle con permisos para crear tablas, indices, secuencias, procedimientos, paquetes y triggers en su propio esquema. El instalador aborta si detecta objetos IMAJ o tablas Laravel preexistentes.
 
 ## Mantenedores IMAJ
 
@@ -49,7 +53,7 @@ Los perfiles activos de la aplicación son `SUPERADMIN`, `CLINICA_ADMIN`, `SUCUR
 
 ### Datos de demostración Oracle
 
-Después de `php artisan migrate`, ejecuta `@database/oracle/IMAJ_DEMO_SEED.sql` desde SQLcl o SQL*Plus, conectado al mismo esquema Oracle. El script carga las seis cuentas requeridas, dos clínicas y sucursales, 10 pacientes sintéticos, cinco prestaciones por clínica y 20 órdenes con sus presupuestos, pagos, exámenes, informes e imágenes de ejemplo. También carga tres regiones, nueve ciudades y 27 direcciones.
+Después de instalar mediante `php artisan migrate` o `IMAJ_INSTALL.sql`, ejecuta `@database\oracle\IMAJ_DEMO_SEED.sql` desde SQLcl o SQL*Plus, conectado al mismo esquema Oracle. El script carga las seis cuentas requeridas, dos clínicas y sucursales, 10 pacientes sintéticos, cinco prestaciones por clínica y 20 órdenes con sus presupuestos, pagos, exámenes, informes e imágenes de ejemplo. También carga tres regiones, nueve ciudades y 27 direcciones.
 
 El script funciona tanto después de una migración limpia como en una base con datos. Reutiliza o actualiza las filas que identifica como demo, sincroniza las secuencias antes de insertar y conserva las demás filas. Configura las cuentas solicitadas (incluido el `superadmin` de la migración) con la contraseña suministrada como hash. Solo elimina los roles heredados `ADMINISTRADOR`, `RECEPCIONISTA`, `TECNICO` y `FINANZAS` cuando no están asignados a ningún usuario; los que tengan usuarios se conservan sin interrumpir la carga. Se puede volver a ejecutar sin duplicar sus filas demo. Las rutas de imágenes e informes son metadatos de demostración, no archivos clínicos reales.
 
